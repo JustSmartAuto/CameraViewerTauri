@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Display Results CogSocket Client</title>
+    <script data-main="cogsocket_test" src="require.js"></script>
+    <style>
+        * {
+          font-family: arial;
+          font-size: 12px;
+          margin: 1px;
+        }
+        .cmdBlock {
+            display:block;
+            border:solid;
+            border-color:black;
+            border-width:1px;
+            padding:5px;
+            padding-right:20px;
+            margin-bottom:5px;
+        }
+      pre {font-family:monospace;}
+      input {font-family:monospace;width:100%;}
+      .result {font-family:monospace;}
+      .log {min-height:200px;max-height:200px;overflow:auto;border:solid;border-color:black;border-width:1px;}
+    </style>
+    <script>
+    var sessionID = null;
+    var timerID = null;
+
+    var cogsocket;
+
+    requirejs(["cogsocket_test"], function(cogsocket_test) {
+      cogsocket = require('cogsocket_test');
+    });
+        
+    function sendReady()
+    {
+      cogsocket.post(postResult, sessionID + "/ready", "");
+    }
+    
+    function onKeepAlive()
+    {
+      cogsocket.post(postResult, sessionID + "/keepAlive", "");
+    }
+    
+    function onResultChanged(resp)
+    {
+      hmiResult.innerText = JSON.stringify(resp[0],null,2);
+      sendReady();
+    }
+    
+    function onOpenSessionComplete(resp)
+    {
+      if (!resp || resp.number) {
+        return; // Unable to establish a session
+      }
+      
+      sessionID = resp;
+      cogsocket.post(postResult, sessionID + "/login", "[\"" + username.value + "\", \"" + password.value + "\", false]");
+      cogsocket.addListener(postResult, sessionID + "/resultChanged", onResultChanged);
+      sendReady(); // Accept the first result
+      timerID = setInterval(onKeepAlive, 20000);
+    }    
+    
+    var sessionInfo;
+       
+    function onConnectHandler()
+    {
+      // Request that all of the cells in the range A0:Z399 are included in the results
+      let sessionInfo = "{\"cellNames\": [\"A0:Z399\" ]}";
+      this.sessionInfo = sessionInfo;
+      cogsocket.post(postResult, rootPath.value + "/openSession", this.sessionInfo, onOpenSessionComplete);
+    }
+    
+    function onConnect()
+    {
+      hmiResult.innerText='';
+      cogsocket.connect(systemUrl.value, outputText, onConnectHandler);
+    }
+    
+    function onClose()
+    {
+      if (timerID) {
+        clearTimeout(timerID);
+        timerID = null;
+      }
+      if (sessionID) {
+        cogsocket.post(postResult, sessionID + "/dispose", null);
+        sessionID = null;
+      }
+      cogsocket.close();
+    }
+
+    window.onClose = onClose;
+            
+    </script>
+</head>
+<body>
+  <b>Display Results CogSocket Client</b>
+  <div class="cmdBlock">
+  <button id="connectButton" onclick="onConnect()">Connect</button>
+  <input type="url" id="systemUrl" value="ws://127.0.0.1:80/ws"/>
+  <input type="root" id="rootPath" value="cam0/hmi"/>
+  <button id="closeButton" onclick="onClose()">close</button>
+  <br>
+  <br>
+  Username: <input type="text" id="username" value="admin"/>
+  Password: <input type="text" id="password" value=""/>
+  </div>
+    
+  &nbsp;
+  <div style="display:none">
+      <pre id="postResult" class="result"></pre>
+  </div>
+  
+  <div style="border:solid;border-color:black;border-width:1px;padding:5px">
+      HmiResult: <pre id="hmiResult" class="log"></pre>
+  </div>
+  <br>
+  <button id="clearButton" onclick="outputText.innerText=hmiResult.innerText=''">Clear</button>
+  <br>
+  <br>
+  Message Log: <pre class="log" id="outputText"></pre>
+</body>
+</html>

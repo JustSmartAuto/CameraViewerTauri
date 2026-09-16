@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>CogSocket Test Client</title>
+    <script data-main="cogsocket_test" src="require.js"></script>
+    <style>
+        * {
+          font-family: arial;
+          font-size: 12px;
+          margin: 1px;
+        }
+        .cmdBlock {
+            display:block;
+            border:solid;
+            border-color:black;
+            border-width:1px;
+            padding:5px;
+            padding-right:20px;
+            margin-bottom:5px;
+        }
+        pre {font-family:monospace;}
+        input {font-family:monospace;width:100%;}
+        .result {font-family:monospace;}
+        .log {min-height:200px;max-height:200px;overflow:auto;border:solid;border-color:black;border-width:1px;}
+    </style>
+</head>
+<body>
+  <b>CogSocket Test Client</b><br>
+  <div style="padding:5px;padding-right:20px;">
+    <button id="connectButton" onclick="require('cogsocket_test').connect(systemUrl.value, outputText)">Connect</button>
+    <input type="url" id="systemUrl" value="ws://127.0.0.1:80/ws"/>
+    <button id="closeButton" onclick="require('cogsocket_test').close()">close</button>
+  </div>
+  <div class="cmdBlock">
+      <button id="addListenerButton" onclick="require('cogsocket_test').addListener(listenResult, listenPath.value)">addListener</button>
+      <button id="removeListenerButton" onclick="require('cogsocket_test').removeListener(listenResult, listenPath.value)">removeListener</button>
+      <input type="text" id="listenPath" value="cam0/hmi/stateChanged"/><br>
+      Result: <pre id="listenResult" class="result"></pre>
+  </div>
+  <div class="cmdBlock">
+      <button id="putButton" onclick="require('cogsocket_test').put(putResult, putPath.value, putValue.value)">put</button>
+      <input type="text" id="putPath" value="cam0/hmi/keepAliveTimeout"/><br>
+      Value: <input type="text" id="putValue" value="&quot;360000&quot;"/><br>
+      Result: <pre id="putResult" class="result"></pre>
+  </div>
+  <div class="cmdBlock">
+      <button id="getButton" onclick="require('cogsocket_test').get(getResult, getPath.value)">get</button>
+      <input style="min-width: 800" type="text" id="getPath" value="cam0/hmi/info"/><br>
+      Result: <pre id="getResult" class="result"></pre>
+  </div>
+  <div class="cmdBlock">
+      <button id="postButton" onclick="require('cogsocket_test').post(postResult, postPath.value, postArgs.value)">post</button>
+      <input type="text" id="postPath" value="cam0/hmi/openSession"/><br>
+      Args: <input type="text" id="postArgs" value=""/><br>
+      Result: <pre id="postResult" class="result"></pre>
+  </div>
+  <hr>
+  <button id="clearButton" onclick="outputText.innerText=putResult.innerText=getResult.innerText=postResult.innerText=''">Clear</button>
+  Message Log:
+  <pre class="log" id="outputText"></pre>
+</body>
+</html>
