@@ -48,6 +48,7 @@ namespace CameraViewerDotnet
             urlBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) CommitUrl(); };
             Grid.SetColumn(urlBox, 0);
             top.Children.Add(urlBox);
+            AttachPlaceholder(urlBox, "urlPlaceholder", out urlPlaceholderBrush);
 
             lockBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
             lockBtn.Click += (s, e) => ToggleLock();
@@ -91,6 +92,7 @@ namespace CameraViewerDotnet
             };
             Grid.SetRow(remarkBox, 1);
             grid.Children.Add(remarkBox);
+            AttachPlaceholder(remarkBox, "remarkPlaceholder", out remarkPlaceholderBrush);
 
             webView = new Microsoft.Web.WebView2.Wpf.WebView2();
             webView.Margin = new Thickness(4, 2, 4, 4);
@@ -110,6 +112,29 @@ namespace CameraViewerDotnet
 
         private readonly Button maxBtn;
         private readonly Button refreshBtn;
+        private System.Windows.Media.VisualBrush urlPlaceholderBrush;
+        private System.Windows.Media.VisualBrush remarkPlaceholderBrush;
+
+        private void AttachPlaceholder(TextBox box, string placeholderKey, out System.Windows.Media.VisualBrush brush)
+        {
+            var tb = new TextBlock
+            {
+                Text = I18n.T(placeholderKey),
+                Foreground = (System.Windows.Media.Brush)Application.Current.Resources["FgDimBrush"],
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(3, 0, 0, 0),
+                IsHitTestVisible = false,
+            };
+            var b = new System.Windows.Media.VisualBrush(tb)
+            {
+                Stretch = System.Windows.Media.Stretch.None,
+                AlignmentX = System.Windows.Media.AlignmentX.Left,
+                AlignmentY = System.Windows.Media.AlignmentY.Center,
+            };
+            brush = b;
+            box.TextChanged += (s, e) => box.Background = string.IsNullOrEmpty(box.Text) ? b : null;
+            box.Background = string.IsNullOrEmpty(box.Text) ? b : null;
+        }
 
         private void UpdateLockBtn()
         {
@@ -127,6 +152,8 @@ namespace CameraViewerDotnet
             refreshBtn.Content = AntIcon.Content(AntIcon.Reload, I18n.T("refresh"));
             urlBox.ToolTip = I18n.T("url");
             remarkBox.ToolTip = I18n.T("remark");
+            if (urlPlaceholderBrush?.Visual is TextBlock utb) utb.Text = I18n.T("urlPlaceholder");
+            if (remarkPlaceholderBrush?.Visual is TextBlock rtb) rtb.Text = I18n.T("remarkPlaceholder");
         }
 
         private void CommitUrl()
