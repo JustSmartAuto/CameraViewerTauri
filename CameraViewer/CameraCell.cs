@@ -72,10 +72,10 @@ namespace CameraViewerDotnet
 
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             var top = new Grid { Margin = new Thickness(4, 4, 4, 2) };
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -95,14 +95,33 @@ namespace CameraViewerDotnet
             top.Children.Add(urlBox);
             AttachPlaceholder(urlBox, "urlPlaceholder", out urlPlaceholderBrush);
 
+            remarkBox = new TextBox
+            {
+                Text = item.remark,
+                IsReadOnly = item.locked,
+                ToolTip = I18n.T("remark"),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Height = 26,
+                Margin = new Thickness(4, 0, 0, 0),
+            };
+            remarkBox.LostFocus += (s, e) =>
+            {
+                var it = ConfigService.EnsureItem(id);
+                it.remark = remarkBox.Text;
+                ConfigService.SaveCamera();
+            };
+            Grid.SetColumn(remarkBox, 1);
+            top.Children.Add(remarkBox);
+            AttachPlaceholder(remarkBox, "remarkPlaceholder", out remarkPlaceholderBrush);
+
             lockBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
             lockBtn.Click += (s, e) => ToggleLock();
-            Grid.SetColumn(lockBtn, 1);
+            Grid.SetColumn(lockBtn, 2);
             top.Children.Add(lockBtn);
 
             refreshBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
             refreshBtn.Click += async (s, e) => await ReloadAsync();
-            Grid.SetColumn(refreshBtn, 2);
+            Grid.SetColumn(refreshBtn, 3);
             top.Children.Add(refreshBtn);
 
             maxBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
@@ -112,32 +131,13 @@ namespace CameraViewerDotnet
                 UpdateMaxBtn();
                 ToggleMaximize?.Invoke(this);
             };
-            Grid.SetColumn(maxBtn, 3);
+            Grid.SetColumn(maxBtn, 4);
             top.Children.Add(maxBtn);
             UpdateLockBtn();
             UpdateMaxBtn();
             refreshBtn.Content = AntIcon.Content(AntIcon.Reload, I18n.T("refresh"));
 
             grid.Children.Add(top);
-
-            remarkBox = new TextBox
-            {
-                Text = item.remark,
-                IsReadOnly = item.locked,
-                ToolTip = I18n.T("remark"),
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Height = 26,
-                Margin = new Thickness(4, 2, 4, 2),
-            };
-            remarkBox.LostFocus += (s, e) =>
-            {
-                var it = ConfigService.EnsureItem(id);
-                it.remark = remarkBox.Text;
-                ConfigService.SaveCamera();
-            };
-            Grid.SetRow(remarkBox, 1);
-            grid.Children.Add(remarkBox);
-            AttachPlaceholder(remarkBox, "remarkPlaceholder", out remarkPlaceholderBrush);
 
             webView = new Microsoft.Web.WebView2.Wpf.WebView2();
             webView.Margin = new Thickness(4, 2, 4, 4);
@@ -155,7 +155,7 @@ namespace CameraViewerDotnet
                 }
                 Navigate();
             };
-            Grid.SetRow(webView, 2);
+            Grid.SetRow(webView, 1);
             grid.Children.Add(webView);
 
             Content = grid;

@@ -5,9 +5,23 @@
 
 ---
 
-## 2026-09-17　版本 26.9.17.16
+## 2026-09-17　版本 26.9.17.17
 
-### 新功能：JOBX 作业备份（FTP/FTPS）
+### 修复：JOBX 备份选择目录后 DataGrid 报错
+
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：新增 `SafeJobxRefresh()` 方法，先 `CommitEdit` + `CancelEdit` 退出编辑事务再 `Items.Refresh()`；添加/选择目录/删除三处调用全部替换，解决"在 AddNew 或 EditItem 事务过程中不允许 Refresh"报错。
+
+### 改进：URL 与备注同行布局
+
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：网格从 3 行（URL+按钮/备注/WebView）改为 2 行（URL+备注+按钮/WebView）；`top` 网格 5 列：URL(`2*`) | 备注(`1*`) | 锁定 | 刷新 | 最大化，减少垂直空间占用。
+
+### 其它
+
+- 版本号 26.9.17.16 → 26.9.17.17。
+
+---
+
+## 2026-09-17　版本 26.9.17.16
 
 - 新增 [CameraViewer/JobxBackupService.cs](CameraViewer/JobxBackupService.cs)：基于 FluentFTP 50.1.0 的作业文件备份服务，支持 FTP/FTPS（FTPS 默认启用，实际必须启用 FTPS 才能正常备份 .jobx 文件）+ 信任自签证书；递归下载 `.jobx`/`.jobx.sig`；环形日志（最近 500 条，INFO/WARN/ERROR 分级）。
 - [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：新增「JOBX备份」标签页，DataGrid 配置相机（名称/IP/端口/用户名/密码/备份目录/FTPS/信任证书），添加/删除/备份/全部备份/打开目录按钮，日志区 DispatcherTimer 每秒刷新。

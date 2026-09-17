@@ -247,7 +247,7 @@ namespace CameraViewerDotnet
             {
                 ConfigService.JobxBackup.cameras.Add(new JobxCameraConfig());
                 ConfigService.SaveJobxBackup();
-                jobxGrid.Items.Refresh();
+                SafeJobxRefresh();
             };
             btns.Children.Add(jobxAddBtn);
 
@@ -331,7 +331,7 @@ namespace CameraViewerDotnet
                         {
                             cam.backup_directory = dlg.SelectedPath;
                             ConfigService.SaveJobxBackup();
-                            jobxGrid.Items.Refresh();
+                            SafeJobxRefresh();
                         }
                     }
                     catch (Exception ex)
@@ -372,7 +372,7 @@ namespace CameraViewerDotnet
                 {
                     ConfigService.JobxBackup.cameras.Remove(cam);
                     ConfigService.SaveJobxBackup();
-                    jobxGrid.Items.Refresh();
+                    SafeJobxRefresh();
                 }
             }));
             deleteCol.CellTemplate = new DataTemplate { VisualTree = deleteFactory };
@@ -401,6 +401,13 @@ namespace CameraViewerDotnet
 
             UpdateJobxTexts();
             return panel;
+        }
+
+        private void SafeJobxRefresh()
+        {
+            try { jobxGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true); } catch { }
+            try { jobxGrid.CancelEdit(); } catch { }
+            jobxGrid.Items.Refresh();
         }
 
         private void RefreshJobxLog()

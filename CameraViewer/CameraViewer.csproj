@@ -11,7 +11,7 @@
     <AssemblyName>CameraViewerDotnet</AssemblyName>
     <RootNamespace>CameraViewerDotnet</RootNamespace>
     <Product>CameraViewerDotnet</Product>
-    <Version>26.9.17.16</Version>
+    <Version>26.9.17.17</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>CameraViewerDotnet.App</StartupObject>
     <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
