@@ -111,6 +111,14 @@ namespace CameraViewerDotnet
                 UpdateToolbarButtons();
             };
             btns.Children.Add(langBtn);
+
+            aboutBtn = MakeButton(AntIcon.InfoCircle, I18n.T("about"));
+            aboutBtn.Click += (s, e) =>
+            {
+                var dlg = new AboutWindow { Owner = this };
+                dlg.ShowDialog();
+            };
+            btns.Children.Add(aboutBtn);
             UpdateToolbarButtons();
 
             tbGrid.Children.Add(btns);
@@ -188,6 +196,7 @@ namespace CameraViewerDotnet
         private readonly System.Windows.Controls.Button settingsBtn;
         private readonly System.Windows.Controls.Button themeBtn;
         private readonly System.Windows.Controls.Button langBtn;
+        private readonly System.Windows.Controls.Button aboutBtn;
 
         private void UpdateToolbarButtons()
         {
@@ -196,6 +205,7 @@ namespace CameraViewerDotnet
                 ? AntIcon.Content(AntIcon.Sun, I18n.T("themeLight"))
                 : AntIcon.Content(AntIcon.Moon, I18n.T("themeDark"));
             langBtn.Content = AntIcon.Content(AntIcon.Global, I18n.Language == "en" ? I18n.T("languageZh") : I18n.T("languageEn"));
+            aboutBtn.Content = AntIcon.Content(AntIcon.InfoCircle, I18n.T("about"));
         }
 
         private static System.Windows.Controls.Button MakeButton(string iconData, string text) =>
@@ -228,6 +238,7 @@ namespace CameraViewerDotnet
             [6] = (3, 2),
             [9] = (3, 3),
             [12] = (4, 3),
+            [16] = (4, 4),
         };
 
         public void RebuildGrid()

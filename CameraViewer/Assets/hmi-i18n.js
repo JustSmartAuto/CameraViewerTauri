@@ -2,11 +2,12 @@
  * HMI 网页 i18n 文本替换脚本（Cognex In-Sight HMI，/pages/hmi/）
  * ----------------------------------------------------------------
  * 本脚本通过 WebView2 AddScriptToExecuteOnDocumentCreatedAsync 在“文档创建期”
- * 注入到主窗口的每一个 frame（包括跨域相机 iframe——浏览器同源策略不允许
- * 父页面改写跨域 iframe DOM，但宿主层注入脚本在该 frame 内拥有完整 DOM 权限）。
+ * 注入到 WebView2 的每一个 frame。在 .NET 版中每个 CameraCell 的 WebView2
+ * 顶层 frame 直接就是相机 HMI 页面（无父页面），故不再排除顶层 frame；
+ * 只要 URL 路径匹配 /pages/hmi/ 即激活（含顶层 frame 与可能的嵌套 iframe）。
  *
  * 工作方式：
- *  - 仅在相机 iframe 内且 URL 路径匹配 /pages/hmi/ 时激活；
+ *  - 路径匹配 /pages/hmi/ 时激活；
  *  - 语言完全跟随软件：默认英文（原文），宿主通过 chrome.webview 消息通知语言；
  *  - 只做“整串精确匹配替换”，不做子串替换，避免破坏作业数据/文件名/数值；
  *  - MutationObserver 监听框架后续动态渲染的节点与 title 属性，并可还原回英文；
@@ -21,8 +22,7 @@
 
   // 防止脚本被重复注入时重复初始化
   if (window.__hmiI18n) return;
-  // 只在 iframe（相机网页）内工作，顶层 frame 是本软件自己的界面
-  if (window.self === window.top) return;
+  // .NET 版中相机 HMI 页面就是 WebView2 的顶层 frame，不再排除 self===top
   if (!/\/pages\/hmi(?:\/|$)/.test(location.pathname)) return;
 
   window.__hmiI18n = true;

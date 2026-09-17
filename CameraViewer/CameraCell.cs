@@ -15,8 +15,53 @@ namespace CameraViewerDotnet
         private readonly Microsoft.Web.WebView2.Wpf.WebView2 webView;
         private bool webViewReady;
         private bool isMaximized;
+        private static string hmiI18nScript;
 
         public event Action<CameraCell> ToggleMaximize;
+
+        private static string LoadHmiI18nScript()
+        {
+            if (hmiI18nScript != null) return hmiI18nScript;
+            try
+            {
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                foreach (var name in asm.GetManifestResourceNames())
+                {
+                    if (name.EndsWith("hmi-i18n.js"))
+                    {
+                        using (var s = asm.GetManifestResourceStream(name))
+                        using (var r = new System.IO.StreamReader(s, System.Text.Encoding.UTF8))
+                            hmiI18nScript = r.ReadToEnd();
+                        return hmiI18nScript;
+                    }
+                }
+            }
+            catch { }
+            hmiI18nScript = "";
+            return hmiI18nScript;
+        }
+
+        private void PostHmiLang()
+        {
+            if (!webViewReady || webView.CoreWebView2 == null) return;
+            try
+            {
+                webView.CoreWebView2.PostWebMessageAsJson(
+                    "{\"__hmiI18n\":\"lang\",\"lang\":\"" + I18n.Language + "\"}");
+            }
+            catch { }
+        }
+
+        private void OnWebMessageReceived(object sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                var json = e.WebMessageAsJson;
+                if (json != null && json.Contains("__hmiI18n") && json.Contains("ready"))
+                    PostHmiLang();
+            }
+            catch { }
+        }
 
         public CameraCell(int id)
         {
@@ -96,9 +141,18 @@ namespace CameraViewerDotnet
 
             webView = new Microsoft.Web.WebView2.Wpf.WebView2();
             webView.Margin = new Thickness(4, 2, 4, 4);
-            webView.CoreWebView2InitializationCompleted += (s, e) =>
+            webView.CoreWebView2InitializationCompleted += async (s, e) =>
             {
-                webViewReady = true;
+                if (e.IsSuccess)
+                {
+                    webViewReady = true;
+                    webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                    var script = LoadHmiI18nScript();
+                    if (!string.IsNullOrEmpty(script))
+                    {
+                        try { await webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script); } catch { }
+                    }
+                }
                 Navigate();
             };
             Grid.SetRow(webView, 2);
@@ -154,6 +208,7 @@ namespace CameraViewerDotnet
             remarkBox.ToolTip = I18n.T("remark");
             if (urlPlaceholderBrush?.Visual is TextBlock utb) utb.Text = I18n.T("urlPlaceholder");
             if (remarkPlaceholderBrush?.Visual is TextBlock rtb) rtb.Text = I18n.T("remarkPlaceholder");
+            PostHmiLang();
         }
 
         private void CommitUrl()

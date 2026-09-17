@@ -84,7 +84,7 @@ namespace CameraViewerDotnet
             var countRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             countRow.Children.Add(Label(I18n.T("count")));
             var countBox = new ComboBox { Width = 80 };
-            foreach (var n in new[] { 1, 2, 4, 6, 9, 12 })
+            foreach (var n in new[] { 1, 2, 4, 6, 9, 12, 16 })
                 countBox.Items.Add(n);
             countBox.SelectedItem = ConfigService.Camera.count;
             countBox.SelectionChanged += (s, e) =>
@@ -308,6 +308,42 @@ namespace CameraViewerDotnet
             jobxGrid.Columns.Add(TextCol("password", "ftp_password", 80));
             jobxGrid.Columns.Add(TextCol("backupDir", "backup_directory", 130));
 
+            var selectCol = new DataGridTemplateColumn { Header = I18n.T("select"), Width = 64 };
+            var selFactory = new FrameworkElementFactory(typeof(Button));
+            selFactory.SetValue(Button.ContentProperty, I18n.T("select"));
+            selFactory.SetValue(Button.HeightProperty, 24.0);
+            selFactory.AddHandler(Button.ClickEvent, new RoutedEventHandler((s, e) =>
+            {
+                if (((FrameworkElement)s).DataContext is JobxCameraConfig cam)
+                {
+                    try
+                    {
+                        var dlg = new System.Windows.Forms.FolderBrowserDialog
+                        {
+                            Description = I18n.T("selectBackupDir"),
+                            ShowNewFolderButton = true,
+                        };
+                        if (!string.IsNullOrWhiteSpace(cam.backup_directory) && System.IO.Directory.Exists(cam.backup_directory))
+                            dlg.SelectedPath = cam.backup_directory;
+                        var owner = Win32WindowHost.FromVisual((DependencyObject)s);
+                        if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK
+                            && !string.IsNullOrWhiteSpace(dlg.SelectedPath))
+                        {
+                            cam.backup_directory = dlg.SelectedPath;
+                            ConfigService.SaveJobxBackup();
+                            jobxGrid.Items.Refresh();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Windows.MessageBox.Show(ex.Message, I18n.T("error"),
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+            }));
+            selectCol.CellTemplate = new DataTemplate { VisualTree = selFactory };
+            jobxGrid.Columns.Add(selectCol);
+
             var checkStyle = new Style(typeof(CheckBox));
             checkStyle.Setters.Add(new EventSetter(CheckBox.CheckedEvent, new RoutedEventHandler((s, e) => ConfigService.SaveJobxBackup())));
             checkStyle.Setters.Add(new EventSetter(CheckBox.UncheckedEvent, new RoutedEventHandler((s, e) => ConfigService.SaveJobxBackup())));
@@ -377,6 +413,26 @@ namespace CameraViewerDotnet
             var text = sb.ToString();
             jobxLog.Text = text;
             jobxLog.ScrollToEnd();
+        }
+
+        private class Win32WindowHost : System.Windows.Forms.IWin32Window
+        {
+            public IntPtr Handle { get; private set; }
+            private Win32WindowHost(IntPtr handle) { Handle = handle; }
+            public static Win32WindowHost FromVisual(System.Windows.DependencyObject d)
+            {
+                try
+                {
+                    var win = System.Windows.Window.GetWindow(d);
+                    if (win != null)
+                    {
+                        var helper = new System.Windows.Interop.WindowInteropHelper(win);
+                        return new Win32WindowHost(helper.Handle);
+                    }
+                }
+                catch { }
+                return null;
+            }
         }
     }
 }

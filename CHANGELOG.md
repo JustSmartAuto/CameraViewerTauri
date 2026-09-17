@@ -1,19 +1,61 @@
-# CHANGELOG
+# 更新日志 / CHANGELOG
 
-## 2026-09-17
+> 记录规则：按**小时**记录当日修改，每条注明涉及文件与打包产物，时间取自文件修改时间与构建产物时间戳。
+> 版本号规则：`年.月.日`（如 26.9.17 = 2026-09-17）。
 
-### 13:00–14:00
-- 初始化 `CameraViewerDotnet` 解决方案：调研 CameraViewerTauri（Tauri 2.x + Rust）功能，确定复刻范围（相机网格核心功能）
-- 创建 WPF 主程序 `CameraViewer/`（net8.0-windows，XAML + AntdUI 引用 + WebView2）：主窗口 1200×800 最大化、1–12 路相机网格、错峰延时加载、每格 URL/备注/锁定/刷新/最大化、设置窗口四标签页、明暗主题、中英双语、托盘驻留、JSON 配置（支持 portable.txt 便携模式）
-- 创建 .NET Framework 4.8 启动器 `CameraViewer.Launcher/`：内嵌 .NET 8 运行时安装包与主程序 exe，`dotnet --list-runtimes` 检测 → 静默安装 → 释放并启动主程序
-- 编写 `build-with-timestamp.sh` 一键打包脚本（publish 单文件主程序 → MSBuild 编译启动器 → 输出带时间戳 exe）
-- 修复 Git Bash 下 `/p:` 参数被当路径、for 循环 glob 引号导致的脚本错误
-- 修复单文件发布下 `Assembly.Location` 返回空串的问题（IL3000），改用 `GetName().Version`
+---
 
-### 14:00–15:00
-- 按需求删除全部 XAML，纯 C# 重写整个 WPF UI（App/MainWindow/CameraCell/SettingsWindow 代码构建）
-- 控件库由 AntdUI（经核实无 WPF 版，仅 WinForms）改用 **HandyControls 3.7.0**（HandyControl 官方后继分支，支持 `ThemeManager` 代码切换主题），VS Code 配色以应用级画刷叠加
-- 软件全面更名 **CameraViewerDotnet**（程序集/窗口标题/托盘/配置目录/产物命名），启动器与打包脚本同步适配
-- 修复打包时旧测试进程占用 WebView2 缓存目录导致的构建失败
-- 设置 Logo（`assets\icon.ico`）：主程序 exe、主窗口标题栏、系统托盘、启动器 exe 均内嵌该图标
-- 端到端验证构建通过（0 警告 0 错误），产出 `dist/CameraViewerDotnet_202609171437.exe`（约 60MB 便携式单文件）
+## 2026-09-17　版本 26.9.17.16
+
+### 新功能：JOBX 作业备份（FTP/FTPS）
+
+- 新增 [CameraViewer/JobxBackupService.cs](CameraViewer/JobxBackupService.cs)：基于 FluentFTP 50.1.0 的作业文件备份服务，支持 FTP/FTPS（FTPS 默认启用，实际必须启用 FTPS 才能正常备份 .jobx 文件）+ 信任自签证书；递归下载 `.jobx`/`.jobx.sig`；环形日志（最近 500 条，INFO/WARN/ERROR 分级）。
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：新增「JOBX备份」标签页，DataGrid 配置相机（名称/IP/端口/用户名/密码/备份目录/FTPS/信任证书），添加/删除/备份/全部备份/打开目录按钮，日志区 DispatcherTimer 每秒刷新。
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：新增 `JobxCameraConfig`（`ftps_enabled` 默认 `true`）、`JobxBackupConfig`，加载/保存 `JobxBackupConfig.json`。
+- 备份目录列新增「选择」按钮（`DataGridTemplateColumn` + `System.Windows.Forms.FolderBrowserDialog`），点击浏览选择文件夹（WPF 窗口句柄作为 owner，try-catch 防崩溃），写回配置并刷新。初版用 `Microsoft.Win32.OpenFolderDialog`（.NET 8 新增）运行时闪退，改用久经考验的 WinForms 对话框。
+- 依赖：[CameraViewer/CameraViewer.csproj](CameraViewer/CameraViewer.csproj) 新增 `FluentFTP 50.1.0`。
+
+### 新功能：HMI 语言跟随（WebView2 注入脚本）
+
+- 新增 [CameraViewer/Assets/hmi-i18n.js](CameraViewer/Assets/hmi-i18n.js)（`EmbeddedResource` 编译期烘焙，不新增运行时资源依赖）：
+  - 路径匹配 `/pages/hmi/` 时激活（含顶层 frame 与嵌套 iframe）；默认英文（原文），宿主通过 `chrome.webview` 消息通知语言切换。
+  - 只做整串精确匹配替换（字典 ~80 词），不做子串替换，避免破坏作业数据/文件名/数值；MutationObserver 批处理（16ms 合并）框架后续动态渲染；切回英文时按记录原文完整还原。
+  - 宿主（C# 侧）协议：子→宿主 `{__hmiI18n:"ready"}`，宿主→子 `{__hmiI18n:"lang",lang:"zh"|"en"}`。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：`CoreWebView2InitializationCompleted` 改为 async，注入脚本（`AddScriptToExecuteOnDocumentCreatedAsync`）→ 挂载 `WebMessageReceived` → 导航；收到 `ready` 握手立即 `PostWebMessageAsJson` 下发当前语言；`OnLanguageChanged` 末尾调用 `PostHmiLang` 实时通知。
+- **修复 .NET 版架构适配**：.NET 版每个 CameraCell 的 WebView2 顶层 frame 直接就是相机 HMI 页面（无父页面），移除 `if (window.self === window.top) return;`（Tauri 版保留该检查因顶层 frame 是软件 UI）；通信改为 `chrome.webview` 通道（Tauri 版用标准 `window.postMessage` 父子 frame 通信）。
+
+### 新功能：关于页面
+
+- 新增 [CameraViewer/AboutWindow.cs](CameraViewer/AboutWindow.cs)：显示应用名/版本号（`AssemblyInformationalVersionAttribute`）/功能描述/技术栈/GitHub 仓库链接（`Hyperlink` + `Process.Start`），关闭按钮，跟随主题色。
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)：工具栏新增「关于」按钮（`AntIcon.InfoCircle` 图标），语言切换时同步刷新。
+- [CameraViewer/AntIcon.cs](CameraViewer/AntIcon.cs)：新增 `InfoCircle` 图标常量。
+- [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：新增 `about`/`aboutDesc`/`aboutTech`/`aboutRepo`/`aboutClose` 中英文键。
+
+### 改进：网格布局 12 → 16
+
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)：`Layouts` 新增 `[16] = (4, 4)` 预设。
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：相机数量上限 12 → 16。
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：数量选项增加 16。
+
+### 改进：URL/备注输入框水印提示
+
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：`AttachPlaceholder` 方法用 `VisualBrush` 实现水印（空内容显示占位文本），URL 框 `192.168.1.10 或 http://...`，备注框 `备注...`；语言切换时同步刷新占位文本。
+- [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：新增 `urlPlaceholder`/`remarkPlaceholder` 中英文键。
+
+### 修复：崩溃产生僵尸进程导致无法重启
+
+- [CameraViewer/App.cs](CameraViewer/App.cs)：新增全局未处理异常处理（`DispatcherUnhandledException` + `AppDomain.UnhandledException` + `TaskScheduler.UnobservedTaskException`），崩溃时弹错误框后 `Shutdown()` + `Environment.Exit(1)` 优雅退出，释放文件锁，避免产生僵尸进程。
+- [CameraViewer.Launcher/Program.cs](CameraViewer.Launcher/Program.cs)：`ExtractResource` 的 `File.Delete` 改为 `TryDeleteFile`——若 exe 被占用则先 `Process.Kill()` 结束残留 `CameraViewerDotnet` 进程再重试删除（最多 4 次，间隔 500ms），解决崩溃后重启提示"访问被拒绝"的问题。
+
+### 其它
+
+- [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：新增 `select`/`selectBackupDir`/`error` 中英文键。
+- 版本号 26.9.17.14 → 26.9.17.16。
+- 验证：`dotnet build`（主程序）+ `MSBuild`（Launcher）0 警告 0 错误。
+
+---
+
+## 2026-09-17　版本 26.9.17.14（初始提交 a1b5087）
+
+- CameraViewerDotnet：纯 C# WPF + HandyControls 相机 HMI 查看器，.NET 4 启动器内嵌 .NET 8 运行时，单文件打包。
+- 1–12 路相机网格布局、错峰加载、锁定/刷新/最大化、主题切换、中英文、系统托盘、配置持久化。

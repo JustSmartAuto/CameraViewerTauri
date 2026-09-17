@@ -66,6 +66,14 @@ namespace CameraViewer
             ["jobxSuccessFmt"] = new[] { "备份成功，共下载 {0} 个文件", "Backup succeeded, downloaded {0} file(s)" },
             ["openDirFailed"] = new[] { "打开目录失败", "Failed to open directory" },
             ["jobxSelectCamera"] = new[] { "请先选择要备份的相机", "Please select a camera to back up" },
+            ["select"] = new[] { "选择", "Select" },
+            ["selectBackupDir"] = new[] { "选择备份目录", "Select backup directory" },
+            ["error"] = new[] { "错误", "Error" },
+            ["about"] = new[] { "关于", "About" },
+            ["aboutDesc"] = new[] { "多路网络相机监控查看工具，支持 MJPG/RTSP 视频流、JOBX 作业备份、HMI 语言跟随等功能。", "Multi-channel network camera monitoring tool with MJPG/RTSP streams, JOBX backup, and HMI language-following." },
+            ["aboutTech"] = new[] { "技术栈：WPF (.NET 8) + WebView2 + FluentFTP", "Tech stack: WPF (.NET 8) + WebView2 + FluentFTP" },
+            ["aboutRepo"] = new[] { "项目仓库", "Repository" },
+            ["aboutClose"] = new[] { "关闭", "Close" },
         };
 
         public static string T(string key)

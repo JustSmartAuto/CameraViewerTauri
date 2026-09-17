@@ -57,6 +57,11 @@ namespace CameraViewerDotnet
                        "2. 连接端口不正确（Cognex 默认 FTP:21, FTPS:990）\n" +
                        "3. 相机要求 FTPS 加密连接，请勾选\"使用 FTPS\"\n" +
                        "4. 网络或防火墙阻止了连接\n原始错误: " + err;
+            if (lower.Contains("frame size") || lower.Contains("corrupted frame"))
+                return "备份失败: FTPS 加密模式不匹配。可能原因：\n" +
+                       "1. 端口 21 请使用显式 FTPS（AUTH TLS），端口 990 请使用隐式 FTPS\n" +
+                       "2. 若仍失败请确认相机 FTPS 端口与加密模式设置\n" +
+                       "3. 勾选\"信任所有 TLS 证书\"可排除证书问题\n原始错误: " + err;
             if (lower.Contains("actively refused") || lower.Contains("connection refused"))
                 return "备份失败: 连接被拒绝。请检查 IP 地址和端口是否正确，以及相机是否在线。\n原始错误: " + err;
             if (lower.Contains("timed out") || lower.Contains("timeout"))
@@ -102,7 +107,10 @@ namespace CameraViewerDotnet
                 client.Config.DataConnectionReadTimeout = 30000;
                 if (camera.ftps_enabled)
                 {
-                    client.Config.EncryptionMode = FluentFTP.FtpEncryptionMode.Implicit;
+                    // 990 端口 = 隐式 FTPS（连接即 TLS）；其它端口（如 21）= 显式 FTPS（AUTH TLS 升级）
+                    client.Config.EncryptionMode = camera.ftp_port == 990
+                        ? FluentFTP.FtpEncryptionMode.Implicit
+                        : FluentFTP.FtpEncryptionMode.Explicit;
                     client.Config.DataConnectionEncryption = true;
                     if (camera.trust_all_certs)
                         client.Config.ValidateAnyCertificate = true;

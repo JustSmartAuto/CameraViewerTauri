@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace CameraViewer.Launcher
@@ -167,12 +168,33 @@ namespace CameraViewer.Launcher
             {
                 if (stream == null)
                     throw new InvalidOperationException("内嵌资源缺失：" + name);
-                if (File.Exists(dest)) File.Delete(dest);
+                if (File.Exists(dest)) TryDeleteFile(dest);
                 using (var fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
                 {
                     stream.CopyTo(fs);
                 }
             }
+        }
+
+        /// <summary>删除文件，若被占用则先结束残留 CameraViewerDotnet 进程再重试。</summary>
+        private static void TryDeleteFile(string path)
+        {
+            if (!File.Exists(path)) return;
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                try { File.Delete(path); return; }
+                catch (IOException) { /* 文件被占用 */ }
+                catch (UnauthorizedAccessException) { /* 权限/占用 */ }
+                if (attempt == 0)
+                {
+                    foreach (var proc in Process.GetProcessesByName("CameraViewerDotnet"))
+                    {
+                        try { proc.Kill(); proc.WaitForExit(3000); } catch { }
+                    }
+                }
+                Thread.Sleep(500);
+            }
+            File.Delete(path);
         }
     }
 }

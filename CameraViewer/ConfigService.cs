@@ -35,7 +35,7 @@ namespace CameraViewer
         public string ftp_username { get; set; } = "admin";
         public string ftp_password { get; set; } = "";
         public string backup_directory { get; set; } = "";
-        public bool ftps_enabled { get; set; }
+        public bool ftps_enabled { get; set; } = true;
         public bool trust_all_certs { get; set; } = true;
     }
 
@@ -77,7 +77,7 @@ namespace CameraViewer
                         var c = new CameraConfig();
                         c.count = node["count"]?.GetValue<int>() ?? 1;
                         if (c.count < 1) c.count = 1;
-                        if (c.count > 12) c.count = 12;
+                        if (c.count > 16) c.count = 16;
                         c.delay = node["delay"]?.GetValue<int>() ?? 10;
                         if (c.delay < 0) c.delay = 0;
                         foreach (var n in node["items"]?.AsArray() ?? new JsonArray())
@@ -133,7 +133,7 @@ namespace CameraViewer
                             cam.ftp_username = n["ftp_username"]?.GetValue<string>() ?? "admin";
                             cam.ftp_password = n["ftp_password"]?.GetValue<string>() ?? "";
                             cam.backup_directory = n["backup_directory"]?.GetValue<string>() ?? "";
-                            cam.ftps_enabled = n["ftps_enabled"]?.GetValue<bool>() ?? false;
+                            cam.ftps_enabled = n["ftps_enabled"]?.GetValue<bool>() ?? true;
                             cam.trust_all_certs = n["trust_all_certs"]?.GetValue<bool>() ?? true;
                             j.cameras.Add(cam);
                         }
