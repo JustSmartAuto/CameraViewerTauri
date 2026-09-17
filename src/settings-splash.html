@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Loading Settings</title>
+    <!--
+      设置页加载画面：与启动画面相同的 splashscreen 技术——独立窗口加载本页面。
+      点击“设置”时由 Rust 命令 show_settings_splash 动态创建本窗口（label: settings-splash），
+      9 项设置状态查询全部完成后由 main.js 调用 close_settings_splash 关闭。
+      本页面完全自包含（内联 CSS/JS/内联 SVG），不引用任何外部资源，也不发起任何 IPC。
+    -->
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1b1b1f;
+        color: #e8e8ec;
+        font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        user-select: none;
+      }
+      .splash-box {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .splash-icon {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 18px;
+        animation: splash-spin 2.4s linear infinite;
+      }
+      .splash-title {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        margin-bottom: 20px;
+      }
+      .splash-bar {
+        position: relative;
+        width: 220px;
+        height: 3px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.12);
+        overflow: hidden;
+      }
+      .splash-bar::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 40%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, rgba(0, 120, 212, 0), #4a9fe0, rgba(0, 120, 212, 0));
+        animation: splash-slide 1.1s ease-in-out infinite;
+      }
+      .splash-meta {
+        margin-top: 14px;
+        width: 220px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #9a9aa4;
+      }
+      #splash-elapsed {
+        font-variant-numeric: tabular-nums;
+        color: #b8cde6;
+      }
+      @keyframes splash-slide {
+        0%   { transform: translateX(-110%); }
+        100% { transform: translateX(360%); }
+      }
+      @keyframes splash-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="splash-box">
+      <svg class="splash-icon" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M28 19a9 9 0 100 18 9 9 0 000-18z" stroke="#4a9fe0" stroke-width="3"/>
+        <path d="M28 6v7M28 43v7M12.4 12.4l5 5M38.6 38.6l5 5M6 28h7M43 28h7M12.4 43.6l5-5M38.6 17.4l5-5"
+              stroke="#9cc8f0" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <div class="splash-title">正在加载设置… / Loading settings…</div>
+      <div class="splash-bar"></div>
+      <div class="splash-meta">
+        <span>请稍候 / Please wait</span>
+        <span id="splash-elapsed">0 ms</span>
+      </div>
+    </div>
+    <script>
+      // 从本窗口文档开始加载即计时，毫秒数实时刷新
+      (function () {
+        var start = performance.now();
+        setInterval(function () {
+          var el = document.getElementById("splash-elapsed");
+          if (el) {
+            el.textContent = Math.round(performance.now() - start).toLocaleString("en-US") + " ms";
+          }
+        }, 33);
+      })();
+    </script>
+  </body>
+</html>

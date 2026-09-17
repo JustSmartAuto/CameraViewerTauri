@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 启动画面采用 Tauri 官方 splashscreen 方式：独立窗口加载 splashscreen.html，见 tauri.conf.json -->
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="assets/xterm/xterm.css" />
+    <link rel="stylesheet" href="assets/monaco-editor/vs/editor/editor.main.css" />
+    <script src="assets/xterm/xterm.js"></script>
+    <script src="assets/monaco-editor/vs/loader.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CameraViewerTauri</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 顶部工具栏 -->
+      <div class="toolbar">
+        <button id="btn-setting" class="tool-btn">
+          <img src="assets/setting.svg" alt="" />
+          <span data-i18n="setting">Setting</span>
+        </button>
+        <button id="btn-vision" class="tool-btn" style="display:none;">
+          <img src="assets/vision.svg" alt="" />
+          <span data-i18n="visionInspection">视觉检测</span>
+        </button>
+        <span id="app-title" data-i18n="appTitle">CameraViewerTauri</span>
+        <div class="toolbar-right">
+          <button id="btn-about" class="icon-btn" title="关于">
+            <img src="assets/about.svg" alt="about" />
+          </button>
+          <button id="btn-theme" class="icon-btn" title="切换主题">
+            <img id="icon-theme" src="assets/moon.svg" alt="theme" />
+          </button>
+          <button id="btn-lang" class="icon-btn" title="切换语言">
+            <img id="icon-lang" src="assets/lang-zh.svg" alt="lang" />
+          </button>
+        </div>
+      </div>
+
+      <!-- 主内容区 -->
+      <div id="main-content">
+        <div id="camera-grid"></div>
+
+        <!-- 轻度视觉检测工作台（TODO #13，软件设置中启用后显示） -->
+        <div id="vision-view" class="hidden">
+          <div class="vision-workbench">
+            <!-- 左栏：ECMAScript 代码编辑区 -->
+            <section class="vision-col vision-col-script">
+              <div class="vision-col-header">
+                <span data-i18n="visionScript">检测脚本</span>
+                <div class="btn-group">
+                  <button id="btn-vision-default" class="btn-secondary" data-i18n="loadDefault">载入默认</button>
+                  <button id="btn-vision-save" class="btn-secondary" data-i18n="visionSave">保存</button>
+                  <button id="btn-vision-run" class="btn-primary" data-i18n="visionRun">运行检测</button>
+                </div>
+              </div>
+              <div id="vision-editor-wrap" class="vision-editor-wrap"></div>
+            </section>
+
+            <!-- 中栏：声明式 ROI 控件区 -->
+            <section class="vision-col vision-col-controls">
+              <div class="vision-col-header">
+                <span data-i18n="visionControls">ROI 控件</span>
+              </div>
+              <div class="vision-controls-toolbar">
+                <select id="cmbx-vision-ctrl-type">
+                  <option value="region" data-i18n="ctrlRegion">矩形 EditRegion</option>
+                  <option value="circle" data-i18n="ctrlCircle">圆形 EditCircle</option>
+                  <option value="point" data-i18n="ctrlPoint">点 EditPoint</option>
+                  <option value="line" data-i18n="ctrlLine">线段 EditLine</option>
+                  <option value="polygon" data-i18n="ctrlPolygon">多边形 EditPolygon</option>
+                </select>
+                <button id="btn-vision-ctrl-add" class="btn-secondary" data-i18n="visionAddControl">添加</button>
+                <button id="btn-vision-ctrl-del" class="btn-secondary" data-i18n="visionDeleteControl">删除</button>
+              </div>
+              <div class="vision-controls-body">
+                <table id="dgv-vision-controls">
+                  <thead>
+                    <tr><th>#</th><th data-i18n="visionControlName">名称</th><th data-i18n="visionControlType">类型</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+                <div class="vision-canvas-wrap">
+                  <canvas id="vision-roi-canvas"></canvas>
+                  <div id="vision-roi-empty" class="vision-canvas-empty" data-i18n="visionNoImage">请先在右栏载入图片</div>
+                </div>
+              </div>
+              <div id="vision-prop-grid" class="vision-prop-grid"></div>
+            </section>
+
+            <!-- 右栏：原图/效果图 + 控制台日志 -->
+            <section class="vision-col vision-col-output">
+              <div class="vision-col-header">
+                <span data-i18n="visionImages">图像显示</span>
+                <div class="btn-group">
+                  <button id="btn-vision-load-image" class="btn-secondary" data-i18n="visionLoadImage">载入图片</button>
+                </div>
+              </div>
+              <div class="vision-images">
+                <div class="vision-image-block">
+                  <div class="vision-image-title"><span data-i18n="visionOriginal">原图</span></div>
+                  <div class="vision-image-canvas-wrap">
+                    <canvas id="vision-original-canvas"></canvas>
+                  </div>
+                </div>
+                <div class="vision-image-block">
+                  <div class="vision-image-title">
+                    <span data-i18n="visionResult">效果图</span>
+                    <span id="vision-verdict" class="vision-verdict"></span>
+                  </div>
+                  <div class="vision-image-canvas-wrap">
+                    <canvas id="vision-result-canvas"></canvas>
+                  </div>
+                </div>
+              </div>
+              <div class="vision-console-section">
+                <div class="vision-col-header">
+                  <span data-i18n="visionConsole">脚本测试控制台 / 日志</span>
+                  <button id="btn-vision-clear-log" class="btn-secondary" data-i18n="visionClearLog">清空</button>
+                </div>
+                <pre id="vision-console" class="vision-console"></pre>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部状态栏 -->
+      <div class="statusbar">
+        <span id="lbl-time" data-i18n="systemTime">系统时间：--</span>
+        <span id="lbl-version" data-i18n="version">版本号：--</span>
+      </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="setting-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 data-i18n="systemSettings">系统设置</h2>
+          <button id="btn-close-modal" class="close-btn">&times;</button>
+        </div>
+        <div class="tabs-wrapper">
+          <div class="tabs-row">
+            <button class="tab-btn active" data-tab="tab-camera" data-i18n="cameraDisplay">相机显示</button>
+            <button class="tab-btn" data-tab="tab-camera-settings" data-i18n="cameraSettings">相机设置</button>
+            <button class="tab-btn" data-tab="tab-display" data-i18n="displaySettings">显示设置</button>
+            <button class="tab-btn" data-tab="tab-transform" data-i18n="fileTransform">文件转存</button>
+            <button class="tab-btn" data-tab="tab-clean" data-i18n="imageClean">图片清理</button>
+            <button class="tab-btn" data-tab="tab-compress" data-i18n="imageCompress">图像压缩</button>
+            <button class="tab-btn" data-tab="tab-ftp" data-i18n="ftpServer">FTP服务器</button>
+            <button class="tab-btn" data-tab="tab-ntp" data-i18n="ntpServer">NTP时间服务器</button>
+          </div>
+          <div class="tabs-row">
+            <button class="tab-btn" data-tab="tab-jobx" data-i18n="jobxBackup">JOBX作业备份</button>
+            <button class="tab-btn" data-tab="tab-security" data-i18n="securitySettings">安全设置</button>
+            <button class="tab-btn" data-tab="tab-debug" data-i18n="debugTools">调试工具</button>
+            <button class="tab-btn" data-tab="tab-app" data-i18n="appSettings">软件设置</button>
+          </div>
+        </div>
+        <div class="tab-content">
+          <!-- 相机显示设置 -->
+          <div id="tab-camera" class="tab-panel active">
+            <div class="form-row">
+              <label data-i18n="count">数量：</label>
+              <input type="number" id="num-count" min="1" max="16" value="1" />
+            </div>
+            <div class="form-row">
+              <label data-i18n="delay">延时（s）：</label>
+              <input type="number" id="num-delay" min="1" value="10" />
+            </div>
+            <div class="btn-group">
+              <button id="btn-display-create" class="btn-primary" data-i18n="saveApply">保存应用</button>
+              <button id="btn-display-refresh" class="btn-primary" data-i18n="updateView">更新视图</button>
+            </div>
+          </div>
+
+          <!-- 相机设置（连接模式） -->
+          <div id="tab-camera-settings" class="tab-panel">
+            <div class="part-section">
+              <h4 data-i18n="connectionMode">连接模式</h4>
+              <div class="form-row">
+                <label data-i18n="connectionMode">连接模式：</label>
+                <select id="cmbx-connection-mode">
+                  <option value="http" data-i18n="modeHttp">HTTP（网页 HMI）</option>
+                  <option value="cogsocket" data-i18n="modeCogsocket">CogSocket</option>
+                  <option value="gige" data-i18n="modeGige">GigE Vision</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <span class="config-storage-hint" data-i18n="connectionModeNote">注意：CogSocket 与 GigE Vision 协议将在后续版本中支持，当前仅 HTTP 模式可用。</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 显示设置 -->
+          <div id="tab-display" class="tab-panel">
+            <div class="part-section">
+              <h4 data-i18n="windowMirror">窗口镜像</h4>
+              <div class="form-row">
+                <label data-i18n="selectWindow">选择窗口：</label>
+                <select id="cmbx-mirror-window"></select>
+                <button id="btn-mirror-refresh" data-i18n="refresh">刷新</button>
+              </div>
+              <div class="form-row">
+                <label data-i18n="mirrorOpacity">不透明度：</label>
+                <input type="range" id="rng-mirror-opacity" min="10" max="100" value="100" />
+                <span id="lbl-mirror-opacity" class="slider-value">100</span>
+              </div>
+              <div class="form-row">
+                <label>
+                  <input type="checkbox" id="ckbx-mirror-click-through" />
+                  <span data-i18n="mirrorClickThrough">点击穿透</span>
+                </label>
+              </div>
+              <div class="form-row">
+                <label data-i18n="mirrorFit">缩放：</label>
+                <div class="btn-group">
+                  <button id="btn-mirror-fit-original" data-i18n="mirrorFitOriginal">1:1</button>
+                  <button id="btn-mirror-fit-half" data-i18n="mirrorFitHalf">1/2</button>
+                  <button id="btn-mirror-fit-quarter" data-i18n="mirrorFitQuarter">1/4</button>
+                  <button id="btn-mirror-fit-stretch" data-i18n="mirrorFitStretch">拉伸</button>
+                </div>
+              </div>
+              <div class="btn-group">
+                <button id="btn-mirror-start" class="btn-primary" data-i18n="mirrorStart">开始镜像</button>
+                <button id="btn-mirror-stop" class="btn-primary" data-i18n="mirrorStop">停止镜像</button>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="monitorAssignment">指定显示器</h4>
+              <div class="form-row">
+                <label data-i18n="selectMonitor">选择显示器：</label>
+                <select id="cmbx-monitor"></select>
+                <button id="btn-monitor-refresh" data-i18n="refresh">刷新</button>
+              </div>
+              <div class="btn-group">
+                <button id="btn-monitor-apply" class="btn-primary" data-i18n="apply">应用</button>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="virtualDisplay">虚拟显示器</h4>
+              <div class="form-row">
+                <label data-i18n="virtualDisplayStatus">驱动状态：</label>
+                <span id="lbl-vdd-status">--</span>
+              </div>
+              <div class="form-row">
+                <label data-i18n="virtualDisplayList">已添加显示器：</label>
+                <span id="lbl-vdd-displays">--</span>
+              </div>
+              <div class="btn-group">
+                <button id="btn-vdd-install" class="btn-primary" data-i18n="virtualDisplayInstallDriver">安装驱动</button>
+                <button id="btn-vdd-add" class="btn-primary" data-i18n="virtualDisplayAdd">添加显示器</button>
+                <button id="btn-vdd-remove" class="btn-primary" data-i18n="virtualDisplayRemove">移除选中</button>
+                <button id="btn-vdd-refresh" data-i18n="refresh">刷新</button>
+              </div>
+              <div class="form-row">
+                <label data-i18n="virtualDisplaySelect">选择要移除的显示器：</label>
+                <select id="cmbx-vdd-display"></select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 文件转存设置 -->
+          <div id="tab-transform" class="tab-panel">
+            <div class="form-row">
+              <label data-i18n="transformConfig">转存配置：</label>
+              <select id="cmbx-transform-name"></select>
+              <button id="btn-add-transform" data-i18n="add">添加</button>
+              <button id="btn-delete-transform" data-i18n="delete">删除</button>
+            </div>
+            <div id="transform-detail">
+              <div class="form-row">
+                <label data-i18n="watchPath">监控路径：</label>
+                <input type="text" id="txt-watch-path" />
+                <button id="btn-watch-path-browse" class="btn-browse">
+                  <img src="assets/folder.svg" alt="" />
+                  <span data-i18n="browse">浏览</span>
+                </button>
+              </div>
+              <div class="form-row">
+                <label data-i18n="sourceSpliter">源分隔符：</label>
+                <input type="text" id="txt-source-spliter" value="," />
+              </div>
+              <div class="form-row">
+                <label data-i18n="folderIndex">文件夹索引：</label>
+                <input type="number" id="num-folder-index" value="1" />
+              </div>
+              <div class="form-row">
+                <label data-i18n="fileNameIndex">文件名索引：</label>
+                <input type="number" id="num-file-name-index" value="1" />
+              </div>
+              <div class="form-row">
+                <label data-i18n="folderSpliter">文件夹分隔符：</label>
+                <input type="text" id="txt-folder-spliter" value="+" />
+              </div>
+              <div class="form-row">
+                <label data-i18n="fileNameSpliter">文件名分隔符：</label>
+                <input type="text" id="txt-file-spliter" value="_" />
+              </div>
+              <div class="part-section">
+                <h4 data-i18n="folderParts">文件夹部分</h4>
+                <table id="dgv-dir-parts">
+                  <thead><tr><th data-i18n="serialNo">序号</th><th data-i18n="type">类型</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <div class="btn-group">
+                  <button id="btn-dir-part-add" data-i18n="add">添加</button>
+                  <button id="btn-dir-part-del" data-i18n="delete">删除</button>
+                  <button id="btn-dir-part-clear" data-i18n="clear">清空</button>
+                </div>
+                <div id="pnl-dir-part-src" class="hidden">
+                  <label data-i18n="sourceIndex">原路径序号：</label>
+                  <input type="number" id="num-dir-part-src" />
+                </div>
+                <div id="pnl-dir-part-format" class="hidden">
+                  <label data-i18n="format">格式化：</label>
+                  <input type="text" id="txt-dir-part-format" />
+                </div>
+              </div>
+              <div class="part-section">
+                <h4 data-i18n="fileNameParts">文件名部分</h4>
+                <table id="dgv-file-parts">
+                  <thead><tr><th data-i18n="serialNo">序号</th><th data-i18n="type">类型</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <div class="btn-group">
+                  <button id="btn-file-part-add" data-i18n="add">添加</button>
+                  <button id="btn-file-part-del" data-i18n="delete">删除</button>
+                  <button id="btn-file-part-clear" data-i18n="clear">清空</button>
+                </div>
+                <div id="pnl-file-part-src" class="hidden">
+                  <label data-i18n="sourceIndex">原路径序号：</label>
+                  <input type="number" id="num-file-part-src" />
+                </div>
+                <div id="pnl-file-part-format" class="hidden">
+                  <label data-i18n="format">格式化：</label>
+                  <input type="text" id="txt-file-part-format" />
+                </div>
+              </div>
+            </div>
+            <button id="btn-transform-save" class="btn-primary" data-i18n="saveApply">保存应用</button>
+          </div>
+
+          <!-- 图片清理设置 -->
+          <div id="tab-clean" class="tab-panel">
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-clean-enable" />
+                <span data-i18n="enableClean">启用清理</span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label data-i18n="cleanPath">清理路径：</label>
+              <input type="text" id="txt-clean-path" />
+              <button id="btn-clean-path-browse" class="btn-browse">
+                <img src="assets/folder.svg" alt="" />
+                <span data-i18n="browse">浏览</span>
+              </button>
+            </div>
+            <div class="form-row">
+              <label data-i18n="scanInterval">扫描间隔（小时）：</label>
+              <input type="number" id="num-clean-scan-interval" value="2" step="0.1" />
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-clean-empty-folder" checked />
+                <span data-i18n="cleanEmptyFolder">清理空文件夹</span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="radio" name="clean-mode" id="rbtn-hold-day" />
+                <span data-i18n="holdDays">保留天数</span>
+              </label>
+              <input type="number" id="num-clean-hold-day" value="30" />
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="radio" name="clean-mode" id="rbtn-remaining" checked />
+                <span data-i18n="remainingSpace">剩余空间(GB)</span>
+              </label>
+              <input type="number" id="num-clean-remaining" value="5" step="0.1" />
+            </div>
+            <div class="form-row">
+              <label data-i18n="deleteInterval">删除间隔(s)：</label>
+              <input type="number" id="num-clean-interval" value="5" />
+            </div>
+            <!-- 高级版（QuickJS 脚本判定，复刻 ImageCleanerAutoWeld） -->
+            <div class="clean-advanced-section">
+              <div class="form-row">
+                <label>
+                  <input type="checkbox" id="ckbx-clean-advanced" />
+                  <span data-i18n="cleanAdvanced">高级版（脚本判定）</span>
+                </label>
+              </div>
+              <div id="clean-advanced-body" class="clean-advanced-body" style="display:none;">
+                <div class="form-row">
+                  <label>
+                    <input type="checkbox" id="ckbx-clean-image-count" />
+                    <span data-i18n="enableImageCount">启用数量条件</span>
+                  </label>
+                  <input type="number" id="num-clean-image-count" value="3000" />
+                </div>
+                <div class="form-row">
+                  <label data-i18n="deleteScript">删除判定脚本：</label>
+                  <button id="btn-clean-load-default" class="btn-secondary" data-i18n="loadDefault">载入默认</button>
+                  <button id="btn-clean-test-script" class="btn-secondary" data-i18n="test">测试</button>
+                </div>
+                <div id="clean-editor-wrap" class="clean-editor-wrap"></div>
+                <pre id="clean-test-result" class="clean-test-result"></pre>
+                <p class="clean-advanced-hint" data-i18n="cleanAdvancedHint">勾选后由用户脚本决定是否继续删除最旧目标；脚本需定义 evaluate(context) 返回 true/false。context 字段见脚本注释。</p>
+              </div>
+            </div>
+            <button id="btn-clean-apply" class="btn-primary" data-i18n="saveApply">保存应用</button>
+          </div>
+
+          <!-- 图像压缩设置 -->
+          <div id="tab-compress" class="tab-panel">
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-compress-enable" />
+                <span data-i18n="enableCompress">启用压缩</span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label data-i18n="watchPath">监控路径：</label>
+              <input type="text" id="txt-compress-watch-path" />
+              <button id="btn-compress-watch-browse" class="btn-browse">
+                <img src="assets/folder.svg" alt="" />
+                <span data-i18n="browse">浏览</span>
+              </button>
+            </div>
+            <div class="form-row">
+              <label data-i18n="outputPath">输出路径：</label>
+              <input type="text" id="txt-compress-output-path" />
+              <button id="btn-compress-output-browse" class="btn-browse">
+                <img src="assets/folder.svg" alt="" />
+                <span data-i18n="browse">浏览</span>
+              </button>
+            </div>
+            <div class="form-row">
+              <label data-i18n="quality">质量 (1-100)：</label>
+              <input type="range" id="rng-compress-quality" min="1" max="100" value="80" />
+              <span id="lbl-compress-quality" class="slider-value">80</span>
+            </div>
+            <div class="form-row">
+              <label data-i18n="speed">速度 (1-10)：</label>
+              <input type="range" id="rng-compress-speed" min="1" max="10" value="4" />
+              <span id="lbl-compress-speed" class="slider-value">4</span>
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-compress-delete-source" />
+                <span data-i18n="deleteSource">压缩后删除原文件</span>
+              </label>
+            </div>
+            <div class="btn-group">
+              <button id="btn-compress-save" class="btn-primary" data-i18n="saveApply">保存应用</button>
+              <button id="btn-compress-pause" class="btn-primary" data-i18n="pauseCompress">暂停压缩</button>
+            </div>
+            <div id="compress-status" class="compress-status hidden">
+              <div class="status-row">
+                <span class="status-label" data-i18n="compressStatus">压缩状态：</span>
+                <span id="lbl-compress-state" class="status-value" data-i18n="stopped">已停止</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label" data-i18n="totalFiles">总文件数：</span>
+                <span id="lbl-compress-total" class="status-value">0</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label" data-i18n="completedFiles">已完成：</span>
+                <span id="lbl-compress-done" class="status-value">0</span>
+              </div>
+              <div class="progress-bar">
+                <div id="compress-progress" class="progress-fill" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FTP服务器设置 -->
+          <div id="tab-ftp" class="tab-panel">
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-ftp-enable" />
+                <span data-i18n="enableFtp">启用 FTP 服务器</span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label data-i18n="ftpPort">端口：</label>
+              <input type="number" id="num-ftp-port" value="21" min="1" max="65535" />
+            </div>
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-ftp-tls" />
+                <span data-i18n="useTls">使用 TLS</span>
+              </label>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="ftpUsers">FTP 用户</h4>
+              <table id="dgv-ftp-users">
+                <thead><tr><th data-i18n="username">用户名</th><th data-i18n="password">密码</th><th data-i18n="rootDir">根目录</th></tr></thead>
+                <tbody></tbody>
+              </table>
+              <div class="btn-group">
+                <button id="btn-ftp-user-add" data-i18n="add">添加</button>
+                <button id="btn-ftp-user-del" data-i18n="delete">删除</button>
+              </div>
+            </div>
+            <div class="form-row">
+              <label data-i18n="ftpStatus">FTP 状态：</label>
+              <span id="lbl-ftp-status" data-i18n="ftpStopped">已停止</span>
+            </div>
+            <div class="btn-group">
+              <button id="btn-ftp-save" class="btn-primary" data-i18n="saveApply">保存应用</button>
+            </div>
+            <div class="ftp-log-section">
+              <h4 data-i18n="ftpLogs">FTP 服务器日志</h4>
+              <div id="ftp-terminal" class="ftp-terminal"></div>
+            </div>
+          </div>
+
+          <!-- NTP时间服务器设置 -->
+          <div id="tab-ntp" class="tab-panel">
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="ckbx-ntp-enable" />
+                <span data-i18n="enableNtp">启用 NTP 时间服务器</span>
+              </label>
+            </div>
+            <div class="form-row">
+              <label data-i18n="ntpPort">端口：</label>
+              <input type="number" id="num-ntp-port" value="123" min="1" max="65535" />
+            </div>
+            <div class="form-row">
+              <label data-i18n="ntpStatus">状态：</label>
+              <span id="lbl-ntp-status" data-i18n="ntpStopped">已停止</span>
+            </div>
+            <div class="btn-group">
+              <button id="btn-ntp-save" class="btn-primary" data-i18n="saveApply">保存应用</button>
+              <button id="btn-ntp-test" class="btn-primary" data-i18n="ntpTest">测试时间</button>
+            </div>
+            <div class="form-row">
+              <label data-i18n="ntpTestResult">测试结果：</label>
+              <span id="lbl-ntp-test-result" class="test-result">--</span>
+            </div>
+            <div class="ftp-log-section">
+              <h4 data-i18n="ntpLogs">NTP 服务器日志</h4>
+              <div id="ntp-terminal" class="ftp-terminal"></div>
+            </div>
+          </div>
+
+          <!-- JOBX 作业备份 -->
+          <div id="tab-jobx" class="tab-panel">
+            <div class="btn-group">
+              <button id="btn-jobx-add" data-i18n="add">添加</button>
+              <button id="btn-jobx-edit" data-i18n="edit">编辑</button>
+              <button id="btn-jobx-delete" data-i18n="delete">删除</button>
+              <button id="btn-jobx-backup" data-i18n="backupNow">立即备份</button>
+              <button id="btn-jobx-backup-all" data-i18n="backupAll">备份全部</button>
+              <button id="btn-jobx-open-dir" data-i18n="openBackupDir">打开备份目录</button>
+            </div>
+            <div class="part-section">
+              <table id="dgv-jobx-cameras">
+                <thead>
+                  <tr>
+                    <th data-i18n="cameraName">相机名称</th>
+                    <th data-i18n="ipAddress">IP地址</th>
+                    <th data-i18n="ftpPort">FTP端口</th>
+                    <th data-i18n="username">用户名</th>
+                    <th data-i18n="ftps">FTPS</th>
+                    <th data-i18n="backupDir">备份目录</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="ftp-log-section">
+              <h4 data-i18n="jobxLogs">JOBX 备份日志</h4>
+              <div id="jobx-terminal" class="ftp-terminal"></div>
+            </div>
+          </div>
+
+          <!-- 安全设置 -->
+          <div id="tab-security" class="tab-panel">
+            <div class="form-row">
+              <label data-i18n="firewallStatus">防火墙状态：</label>
+              <span id="lbl-firewall-status">--</span>
+            </div>
+            <div class="btn-group">
+              <button id="btn-firewall-open" class="btn-primary" data-i18n="firewallOpenAll">开启所有防火墙</button>
+              <button id="btn-firewall-close" class="btn-primary" data-i18n="firewallCloseAll">关闭所有防火墙</button>
+            </div>
+            <div class="form-row">
+              <label data-i18n="uacStatus">UAC 弹窗状态：</label>
+              <span id="lbl-uac-status">--</span>
+            </div>
+            <div class="btn-group">
+              <button id="btn-uac-open" class="btn-primary" data-i18n="uacOpen">开启 UAC 弹窗</button>
+              <button id="btn-uac-close" class="btn-primary" data-i18n="uacClose">关闭 UAC 弹窗</button>
+            </div>
+          </div>
+
+          <!-- 调试工具 -->
+          <div id="tab-debug" class="tab-panel">
+            <div class="part-section">
+              <h4 data-i18n="remoteCommand">远程指令服务</h4>
+              <div class="form-row">
+                <label data-i18n="remoteCommandPort">服务端口：</label>
+                <input type="number" id="num-remote-cmd-port" value="10022" min="1" max="65535" />
+              </div>
+              <div class="form-row">
+                <label data-i18n="remoteCommandStatus">服务状态：</label>
+                <span id="lbl-remote-cmd-status" data-i18n="stopped">已停止</span>
+              </div>
+              <div class="btn-group">
+                <button id="btn-remote-cmd-start" class="btn-primary" data-i18n="start">启动</button>
+                <button id="btn-remote-cmd-stop" class="btn-primary" data-i18n="stop">停止</button>
+                <button id="btn-remote-cmd-refresh" data-i18n="refresh">刷新</button>
+              </div>
+              <div class="ftp-log-section">
+                <h4 data-i18n="remoteCommandLogs">远程指令日志</h4>
+                <div id="remote-cmd-terminal" class="ftp-terminal"></div>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="lanScanner">扫描局域网设备</h4>
+              <div class="form-row">
+                <label data-i18n="lanSubnet">目标子网：</label>
+                <input type="text" id="txt-lan-subnet" placeholder="192.168.1.0/24" />
+                <button id="btn-lan-subnet-detect" data-i18n="detect">自动检测</button>
+              </div>
+              <div class="form-row">
+                <label data-i18n="lanScanTimeout">Ping 超时(ms)：</label>
+                <input type="number" id="num-lan-timeout" value="800" min="100" max="5000" step="100" />
+              </div>
+              <div class="btn-group">
+                <button id="btn-lan-scan" class="btn-primary" data-i18n="scanNow">开始扫描</button>
+              </div>
+              <div class="form-row">
+                <label data-i18n="lanScanResult">扫描结果：</label>
+                <span id="lbl-lan-scan-result">--</span>
+              </div>
+              <div class="part-section">
+                <table id="dgv-lan-devices">
+                  <thead>
+                    <tr>
+                      <th data-i18n="ipAddress">IP地址</th>
+                      <th data-i18n="macAddress">MAC地址</th>
+                      <th data-i18n="hostname">主机名</th>
+                      <th data-i18n="deviceStatus">状态</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 软件设置 -->
+          <div id="tab-app" class="tab-panel">
+            <div class="part-section">
+              <h4 data-i18n="languageSetting">界面语言</h4>
+              <div class="segmented" id="seg-language" role="group">
+                <button type="button" class="seg-btn" data-lang="zh" data-i18n="languageZh">中文</button>
+                <button type="button" class="seg-btn" data-lang="en" data-i18n="languageEn">English</button>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="themeSetting">界面主题</h4>
+              <div class="segmented" id="seg-theme" role="group">
+                <button type="button" class="seg-btn" data-theme="light" data-i18n="themeLight">浅色</button>
+                <button type="button" class="seg-btn" data-theme="dark" data-i18n="themeDark">深色</button>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="visionFeature">功能开关</h4>
+              <div class="form-row">
+                <label>
+                  <input type="checkbox" id="ckbx-vision-enabled" />
+                  <span data-i18n="visionEnable">启用轻度视觉检测功能</span>
+                </label>
+              </div>
+              <div class="form-row">
+                <span class="config-storage-hint" data-i18n="visionEnableHint">启用后将在主界面工具栏显示“视觉检测”入口按钮与标签页（ECMAScript 脚本编辑、ROI 控件、原图/效果图与控制台）。</span>
+              </div>
+            </div>
+            <div class="part-section">
+              <h4 data-i18n="configStorage">配置文件位置</h4>
+              <div class="form-row">
+                <label data-i18n="configStorageMode">当前模式：</label>
+                <span id="lbl-config-storage-mode">--</span>
+              </div>
+              <div class="form-row config-path-row">
+                <label data-i18n="configStoragePath">配置目录：</label>
+                <span id="lbl-config-storage-path" class="config-path-text">--</span>
+              </div>
+              <div class="form-row">
+                <span id="lbl-config-storage-hint" class="config-storage-hint"></span>
+              </div>
+              <div class="btn-group">
+                <button id="btn-config-portable" class="btn-primary" data-i18n="configUsePortable">改用程序目录（便携模式）</button>
+                <button id="btn-config-default" class="btn-primary" data-i18n="configUseDefault">改用默认目录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加名称弹窗 -->
+    <div id="add-name-modal" class="modal hidden">
+      <div class="modal-content small">
+        <h3 data-i18n="inputName">输入名称</h3>
+        <input type="text" id="txt-add-name" />
+        <div class="btn-group">
+          <button id="btn-add-name-ok" data-i18n="confirm">确定</button>
+          <button id="btn-add-name-cancel" data-i18n="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关于弹窗 -->
+    <div id="about-modal" class="modal hidden">
+      <div class="modal-content about-content">
+        <div class="modal-header">
+          <h2 data-i18n="aboutTitle">关于 CameraViewerTauri</h2>
+          <button id="btn-close-about" class="close-btn">&times;</button>
+        </div>
+        <div class="about-body" id="about-body">
+          <!-- 内容由 JS 动态填充 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加部分弹窗 -->
+    <div id="add-part-modal" class="modal hidden">
+      <div class="modal-content small">
+        <h3 data-i18n="selectType">选择类型</h3>
+        <select id="cmbx-part-type">
+          <option value="Name" data-i18n="name">名称</option>
+          <option value="DateTime" data-i18n="pcTime">PC时间</option>
+        </select>
+        <div class="btn-group">
+          <button id="btn-add-part-ok" data-i18n="confirm">确定</button>
+          <button id="btn-add-part-cancel" data-i18n="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加 FTP 用户弹窗 -->
+    <div id="ftp-user-modal" class="modal hidden">
+      <div class="modal-content small ftp-user-modal-content">
+        <h3 data-i18n="ftpUserAddTitle">添加 FTP 用户</h3>
+        <div class="ftp-user-field">
+          <label data-i18n="username">用户名</label>
+          <input type="text" id="txt-ftp-username" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="password">密码</label>
+          <input type="text" id="txt-ftp-password" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="rootDir">根目录</label>
+          <div class="ftp-root-dir-row">
+            <input type="text" id="txt-ftp-root-dir" />
+            <button id="btn-ftp-root-dir-browse" data-i18n="browse">浏览</button>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button id="btn-ftp-user-ok" data-i18n="confirm">确定</button>
+          <button id="btn-ftp-user-cancel" data-i18n="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- JOBX 相机弹窗 -->
+    <div id="jobx-camera-modal" class="modal hidden">
+      <div class="modal-content small ftp-user-modal-content">
+        <h3 id="jobx-modal-title" data-i18n="jobxCameraAddTitle">添加相机</h3>
+        <div class="ftp-user-field">
+          <label data-i18n="cameraName">相机名称</label>
+          <input type="text" id="txt-jobx-name" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="ipAddress">IP地址</label>
+          <input type="text" id="txt-jobx-ip" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="ftpPort">FTP端口</label>
+          <input type="number" id="num-jobx-port" value="21" min="1" max="65535" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="username">用户名</label>
+          <input type="text" id="txt-jobx-username" value="admin" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="password">密码</label>
+          <input type="text" id="txt-jobx-password" />
+        </div>
+        <div class="ftp-user-field">
+          <label data-i18n="backupDir">备份目录</label>
+          <div class="ftp-root-dir-row">
+            <input type="text" id="txt-jobx-backup-dir" />
+            <button id="btn-jobx-backup-dir-browse" data-i18n="browse">浏览</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>
+            <input type="checkbox" id="ckbx-jobx-ftps" />
+            <span data-i18n="useFtps">使用 FTPS</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>
+            <input type="checkbox" id="ckbx-jobx-trust" checked />
+            <span data-i18n="trustAllCerts">信任所有 TLS 证书</span>
+          </label>
+        </div>
+        <div class="btn-group">
+          <button id="btn-jobx-ok" data-i18n="confirm">确定</button>
+          <button id="btn-jobx-cancel" data-i18n="cancel">取消</button>
+        </div>
+      </div>
+    </div>
+    <!-- CogSocket 单元格设置弹窗（TODO #7） -->
+    <div id="cogsocket-modal" class="modal hidden">
+      <div class="modal-content cs-modal-content">
+        <div class="modal-header">
+          <h3>
+            <span data-i18n="cogsocketTitle">CogSocket 单元格设置</span>
+            <span id="cs-camera-title" class="cs-camera-title"></span>
+          </h3>
+          <button id="cs-btn-close" class="close-btn">&times;</button>
+        </div>
+
+        <div class="cs-conn-bar">
+          <label data-i18n="cogsocketTarget">目标</label>
+          <input type="text" id="cs-target" class="cs-target-input" readonly />
+          <label data-i18n="cogsocketUser">用户名</label>
+          <input type="text" id="cs-user" class="cs-user-input" value="admin" />
+          <label data-i18n="cogsocketPassword">密码</label>
+          <input type="password" id="cs-password" class="cs-pwd-input" value="" />
+          <button id="cs-btn-save-auth" data-i18n="cogsocketSaveAuth">保存凭据</button>
+          <button id="cs-btn-connect" data-i18n="cogsocketConnect">连接</button>
+          <span id="cs-status-dot" class="cs-status-dot cs-closed" title=""></span>
+          <span id="cs-conn-info" class="cs-conn-info"></span>
+        </div>
+
+        <div class="cs-toolbar">
+          <button id="cs-btn-refresh" disabled data-i18n="cogsocketRefresh">刷新单元格</button>
+          <button id="cs-btn-offline" disabled data-i18n="cogsocketGoOffline">离线编辑</button>
+          <button id="cs-btn-trigger" disabled data-i18n="cogsocketTrigger">手动触发</button>
+          <button id="cs-btn-batch" disabled data-i18n="cogsocketBatchWrite">批量写入</button>
+          <button id="cs-btn-clear-log" data-i18n="cogsocketClearLog">清空日志</button>
+        </div>
+
+        <div class="cs-table-wrap">
+          <table class="cs-table">
+            <thead>
+              <tr>
+                <th data-i18n="cogsocketColLocation">地址</th>
+                <th data-i18n="cogsocketColName">名称</th>
+                <th data-i18n="cogsocketColType">类型</th>
+                <th data-i18n="cogsocketColValue">写入值</th>
+                <th data-i18n="cogsocketColReadback">当前值</th>
+                <th data-i18n="cogsocketColAction">操作</th>
+              </tr>
+            </thead>
+            <tbody id="cs-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="cs-manual-row">
+          <input type="text" id="cs-manual-name" data-i18n-placeholder="cogsocketManualName" placeholder="单元格名/地址" />
+          <input type="text" id="cs-manual-value" data-i18n-placeholder="cogsocketManualValue" placeholder="值（JSON：数字/true/字符串/对象）" />
+          <button id="cs-btn-manual-write" disabled data-i18n="cogsocketManualWrite">写入</button>
+        </div>
+
+        <div class="cs-log-wrap">
+          <div id="cs-log" class="cs-log"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

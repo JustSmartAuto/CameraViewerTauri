@@ -1,0 +1,9 @@
+{
+  "name": "camera-viewer-tauri",
+  "private": true,
+  "version": "26.7.25",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  }
+}
