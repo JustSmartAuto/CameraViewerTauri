@@ -1,51 +1,59 @@
-using System.Linq;
-using System.Windows;
-using System.Windows.Media;
-using HandyControl.Themes;
+using System;
+using System.Drawing;
+using AntdUI;
 
 namespace CameraViewer
 {
+    /// <summary>
+    /// 主题管理：AntdUI 黑白模式 + 原生控件配色
+    /// </summary>
     public static class ThemeManager
     {
         public static string Theme = "light";
+        public static bool IsDark => Theme == "dark";
+
+        public static event Action ThemeChanged;
+
+        // 原生（非 AntdUI）控件使用的调色板
+        public static Color Bg { get; private set; }
+        public static Color Bg2 { get; private set; }
+        public static Color Bg3 { get; private set; }
+        public static Color Fg { get; private set; }
+        public static Color FgDim { get; private set; }
+        public static Color Accent { get; private set; }
+        public static Color Border { get; private set; }
+
+        public static TAMode TAMode => IsDark ? TAMode.Dark : TAMode.Light;
 
         public static void Apply(string theme)
         {
             if (theme != "dark") theme = "light";
             Theme = theme;
 
-            var app = Application.Current;
-            if (!app.Resources.MergedDictionaries.Any(d => d is ThemeResources))
-                app.Resources.MergedDictionaries.Add(new ThemeResources());
+            Config.Mode = IsDark ? TMode.Dark : TMode.Light;
 
-            HandyControl.Themes.ThemeManager.Current.ApplicationTheme =
-                theme == "light" ? ApplicationTheme.Light : ApplicationTheme.Dark;
-
-            var r = app.Resources;
-            if (theme == "dark")
+            if (IsDark)
             {
-                r["BgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF1E1E1E"));
-                r["BgBrush2"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF252526"));
-                r["BgBrush3"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF2D2D30"));
-                r["InputBgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3C3C3C"));
-                r["FgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFCCCCCC"));
-                r["FgDimBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF888888"));
-                r["AccentBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF0E639C"));
-                r["HoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF37373D"));
-                r["BorderBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF3F3F46"));
+                Bg = Color.FromArgb(0x1E, 0x1E, 0x1E);
+                Bg2 = Color.FromArgb(0x25, 0x25, 0x26);
+                Bg3 = Color.FromArgb(0x2D, 0x2D, 0x30);
+                Fg = Color.FromArgb(0xCC, 0xCC, 0xCC);
+                FgDim = Color.FromArgb(0x88, 0x88, 0x88);
+                Accent = Color.FromArgb(0x0E, 0x63, 0x9C);
+                Border = Color.FromArgb(0x3F, 0x3F, 0x46);
             }
             else
             {
-                r["BgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFF0F0F0"));
-                r["BgBrush2"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFFFFFF"));
-                r["BgBrush3"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFF7F7F7"));
-                r["InputBgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFFFFFF"));
-                r["FgBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF333333"));
-                r["FgDimBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF777777"));
-                r["AccentBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF0078D4"));
-                r["HoverBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFE5E5E5"));
-                r["BorderBrush"] = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFD0D0D0"));
+                Bg = Color.FromArgb(0xF0, 0xF0, 0xF0);
+                Bg2 = Color.FromArgb(0xFF, 0xFF, 0xFF);
+                Bg3 = Color.FromArgb(0xF7, 0xF7, 0xF7);
+                Fg = Color.FromArgb(0x33, 0x33, 0x33);
+                FgDim = Color.FromArgb(0x77, 0x77, 0x77);
+                Accent = Color.FromArgb(0x00, 0x78, 0xD4);
+                Border = Color.FromArgb(0xD0, 0xD0, 0xD0);
             }
+
+            ThemeChanged?.Invoke();
         }
     }
 }

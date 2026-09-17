@@ -6,23 +6,29 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>CameraViewerDotnet</AssemblyName>
     <RootNamespace>CameraViewerDotnet</RootNamespace>
     <Product>CameraViewerDotnet</Product>
-    <Version>26.9.17.17</Version>
+    <Version>26.9.17.18</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>CameraViewerDotnet.App</StartupObject>
     <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AntdUI" Version="2.4.10" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-    <PackageReference Include="HandyControls" Version="3.7.0" />
     <PackageReference Include="FluentFTP" Version="50.1.0" />
-    <Resource Include="..\assets\icon.ico" />
     <EmbeddedResource Include="Assets\hmi-i18n.js" />
   </ItemGroup>
+
+  <!-- WebView2 包会无条件引用其 WPF 程序集，本应用已迁移到 WinForms，移除该引用以避免 WindowsBase 版本冲突警告 -->
+  <Target Name="RemoveWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_WebView2WpfRef Include="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+      <Reference Remove="@(_WebView2WpfRef)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

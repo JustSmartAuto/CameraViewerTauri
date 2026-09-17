@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-09-17　版本 26.9.17.18
+
+### 重构：UI 框架从 WPF(HandyControls) 迁移到 WinForms + AntdUI
+
+- [CameraViewer/CameraViewer.csproj](CameraViewer/CameraViewer.csproj)：移除 `UseWPF` 与 `HandyControls 3.7.0`，新增 `AntdUI 2.4.10`；新增 `RemoveWebView2WpfReference` Target（移除 WebView2 包对 net5.0+ 无条件引用的 `Microsoft.Web.WebView2.Wpf.dll`，消除 MSB3277 WindowsBase 版本冲突警告）。
+- [CameraViewer/App.cs](CameraViewer/App.cs)：WPF Application 改为 WinForms `[STAThread] Main` 入口；保留三处全局异常处理（UI 线程 / 非UI线程 / 未观察 Task 异常）。
+- [CameraViewer/ThemeManager.cs](CameraViewer/ThemeManager.cs)：改为设置 `AntdUI.Config.Mode` + `System.Drawing.Color` 调色板（VS Code 配色不变），保留 `ThemeChanged` 事件。
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)：继承 `AntdUI.Window`（无边框窗口）；工具栏/状态栏/托盘/网格重排布局（TableLayoutPanel），相机网格 1/2/4/6/9/16 布局与错峰加载逻辑不变。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：每路格子改用 WinForms WebView2 控件 + AntdUI Input/Button；HMI 语言跟随注入逻辑（`hmi-i18n.js` 握手协议）原样保留。
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：改为 `AntdUI.Window` + Tabs；JOBX 相机表格从 WPF DataGrid 改为 AntdUI Table（单元格编辑/勾选/按钮事件）；备份目录选择仍用 WinForms `FolderBrowserDialog`。
+- [CameraViewer/AboutWindow.cs](CameraViewer/AboutWindow.cs)：改为 `AntdUI.Window`。
+- [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：关于页技术栈文案更新为 "WinForms + AntdUI (.NET 8) + WebView2 + FluentFTP"。
+- [README.md](README.md)：技术栈描述 WPF/HandyControls → WinForms/AntdUI。
+- 版本号 26.9.17.17 → 26.9.17.18。
+
+---
+
 ## 2026-09-17　版本 26.9.17.17
 
 ### 修复：JOBX 备份选择目录后 DataGrid 报错

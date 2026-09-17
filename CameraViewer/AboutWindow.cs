@@ -1,110 +1,121 @@
+using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.Reflection;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
+using System.Windows.Forms;
+using AntdUI;
+using CameraViewer;
 
 namespace CameraViewer
 {
-    public class AboutWindow : Window
+    public class AboutWindow : AntdUI.Window
     {
         public AboutWindow()
         {
-            Title = I18n.T("about");
-            Width = 440;
-            Height = 380;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            ResizeMode = ResizeMode.NoResize;
-            Background = (Brush)Application.Current.Resources["BgBrush"];
-            Foreground = (Brush)Application.Current.Resources["FgBrush"];
+            Text = I18n.T("about");
+            Size = new Size(440, 380);
+            StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
+            Resizable = false;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Mode = ThemeManager.TAMode;
 
-            var root = new Grid { Margin = new Thickness(24) };
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(24) };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            // Header: icon + app name
-            var header = new StackPanel
+            // 头部：图标 + 应用名
+            var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+            var icon = new AntdUI.Label
             {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 16),
+                Text = "",
+                PrefixSvg = AntIcon.Svg(AntIcon.InfoCircle),
+                Size = new Size(32, 32),
+                Margin = new Padding(0, 0, 10, 0),
             };
-            var icon = AntIcon.Create(AntIcon.InfoCircle, 28);
-            icon.Margin = new Thickness(0, 0, 10, 0);
-            header.Children.Add(icon);
-            header.Children.Add(new TextBlock
+            header.Controls.Add(icon);
+            var title = new AntdUI.Label
             {
                 Text = I18n.T("appTitle"),
-                FontSize = 20,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.Resources["FgBrush"],
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            root.Children.Add(header);
+                AutoSize = true,
+                Font = new Font("Microsoft YaHei UI", 12f, FontStyle.Bold),
+                Margin = new Padding(0, 6, 0, 0),
+            };
+            header.Controls.Add(title);
+            root.Controls.Add(header, 0, 0);
 
-            // Body: version, description, tech, repo link
-            var body = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+            // 内容：版本、描述、技术栈、仓库链接
+            var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, AutoSize = true };
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
             var ver = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
                 ?.InformationalVersion ?? "1.0.0";
 
-            body.Children.Add(MakeLine(I18n.T("version") + " " + ver));
-            body.Children.Add(MakeGap(10));
-            body.Children.Add(MakeLine(I18n.T("aboutDesc"), true));
-            body.Children.Add(MakeGap(10));
-            body.Children.Add(MakeLine(I18n.T("aboutTech")));
-            body.Children.Add(MakeGap(10));
+            var verLabel = MakeLine(I18n.T("version") + " " + ver);
+            var descLabel = MakeLine(I18n.T("aboutDesc"), true);
+            var techLabel = MakeLine(I18n.T("aboutTech"));
+            body.Controls.Add(verLabel, 0, 0);
+            body.Controls.Add(descLabel, 0, 1);
+            body.Controls.Add(techLabel, 0, 2);
 
-            var repoRow = new StackPanel { Orientation = Orientation.Horizontal };
-            repoRow.Children.Add(new TextBlock
+            var repoRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+            var repoLabel = MakeLine(I18n.T("aboutRepo") + "：");
+            repoRow.Controls.Add(repoLabel);
+            var link = new LinkLabel
             {
-                Text = I18n.T("aboutRepo") + "：",
-                Foreground = (Brush)Application.Current.Resources["FgBrush"],
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            var link = new Hyperlink(new Run("github.com/JustSmartAuto/CameraViewerTauri"))
-            {
-                NavigateUri = new System.Uri("https://github.com/JustSmartAuto/CameraViewerTauri"),
-                Foreground = (Brush)Application.Current.Resources["AccentBrush"],
+                Text = "github.com/JustSmartAuto/CameraViewerTauri",
+                AutoSize = true,
+                LinkColor = ThemeManager.Accent,
+                Margin = new Padding(4, 9, 0, 0),
+                TabStop = true,
             };
-            link.RequestNavigate += (s, e) => { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); e.Handled = true; };
-            var linkBlock = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-            linkBlock.Inlines.Add(link);
-            repoRow.Children.Add(linkBlock);
-            body.Children.Add(repoRow);
-            Grid.SetRow(body, 1);
-            root.Children.Add(body);
-
-            // Close button
-            var closeBtn = new Button
+            link.LinkClicked += (s, e) =>
             {
-                Content = I18n.T("aboutClose"),
+                try { Process.Start(new ProcessStartInfo("https://github.com/JustSmartAuto/CameraViewerTauri") { UseShellExecute = true }); }
+                catch { }
+            };
+            repoRow.Controls.Add(link);
+            body.Controls.Add(repoRow, 0, 3);
+            root.Controls.Add(body, 0, 1);
+
+            // 关闭按钮
+            var closeRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+            var closeBtn = new AntdUI.Button
+            {
+                Text = I18n.T("aboutClose"),
                 Width = 90,
                 Height = 30,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 16, 0, 0),
+                Type = TTypeMini.Primary,
             };
             closeBtn.Click += (s, e) => Close();
-            Grid.SetRow(closeBtn, 2);
-            root.Children.Add(closeBtn);
+            closeRow.Controls.Add(closeBtn);
+            root.Controls.Add(closeRow, 0, 2);
 
-            Content = root;
+            Controls.Add(root);
+
+            I18n.LanguageChanged += UpdateTexts;
+            FormClosed += (s, e) => I18n.LanguageChanged -= UpdateTexts;
+            UpdateTexts();
         }
 
-        private static TextBlock MakeLine(string text, bool wrap = false)
+        private void UpdateTexts()
         {
-            var tb = new TextBlock
-            {
-                Text = text,
-                Foreground = (Brush)Application.Current.Resources["FgBrush"],
-                TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
-            };
-            if (wrap) tb.TextAlignment = TextAlignment.Left;
-            return tb;
+            Text = I18n.T("about");
         }
 
-        private static FrameworkElement MakeGap(double h) => new Border { Height = h };
+        private static AntdUI.Label MakeLine(string text, bool wrap = false) => new AntdUI.Label
+        {
+            Text = text,
+            AutoSize = !wrap,
+            Dock = wrap ? DockStyle.Top : DockStyle.None,
+            MaximumSize = new Size(360, 0),
+            Margin = new Padding(0, 5, 0, 5),
+        };
     }
 }

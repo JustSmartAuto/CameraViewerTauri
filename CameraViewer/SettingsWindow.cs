@@ -1,260 +1,300 @@
 using System;
 using System.Collections.Generic;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Threading;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
+using AntdUI;
 using CameraViewer;
-using Application = System.Windows.Application;
 
 namespace CameraViewerDotnet
 {
-    public class SettingsWindow : Window
+    public class SettingsWindow : AntdUI.Window
     {
+        private readonly AntdUI.Tabs tabs;
+        private readonly List<Action> langUpdaters = new List<Action>();
+
+        private TableLayoutPanel jobxHost;
+        private AntdUI.Table jobxGrid;
+        private readonly List<JobxRow> jobxRows = new List<JobxRow>();
+        private TextBox jobxLog;
+        private AntdUI.Button jobxAddBtn, jobxBackupBtn, jobxBackupAllBtn, jobxOpenDirBtn;
+        private System.Windows.Forms.Timer jobxLogTimer;
+
         public SettingsWindow()
         {
-            Title = I18n.T("systemSettings");
-            Width = 720;
-            Height = 600;
-            WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            ResizeMode = ResizeMode.NoResize;
+            Text = I18n.T("systemSettings");
+            Size = new Size(720, 620);
+            StartPosition = FormStartPosition.CenterParent;
             ShowInTaskbar = false;
-            Background = (System.Windows.Media.Brush)Application.Current.Resources["BgBrush"];
-            Foreground = (System.Windows.Media.Brush)Application.Current.Resources["FgBrush"];
+            Resizable = false;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Mode = ThemeManager.TAMode;
 
-            var tabs = new TabControl { Margin = new Thickness(8) };
-
-            tabs.Items.Add(MakePage(I18n.T("cameraDisplay"), BuildDisplayPage()));
-            tabs.Items.Add(MakePage(I18n.T("cameraSettings"), BuildCameraPage()));
-            tabs.Items.Add(MakePage(I18n.T("displaySettings"), BuildThemePage()));
-            tabs.Items.Add(MakePage(I18n.T("appSettings"), BuildLanguagePage()));
-            tabs.Items.Add(MakePage(I18n.T("jobxBackup"), BuildJobxPage()));
-
-            Content = tabs;
+            tabs = new AntdUI.Tabs { Dock = DockStyle.Fill, Type = TabType.Line };
+            tabs.Pages.Add(MakePage(I18n.T("cameraDisplay"), BuildDisplayPage()));
+            tabs.Pages.Add(MakePage(I18n.T("cameraSettings"), BuildCameraPage()));
+            tabs.Pages.Add(MakePage(I18n.T("displaySettings"), BuildThemePage()));
+            tabs.Pages.Add(MakePage(I18n.T("appSettings"), BuildLanguagePage()));
+            tabs.Pages.Add(MakePage(I18n.T("jobxBackup"), BuildJobxPage()));
+            Controls.Add(tabs);
 
             I18n.LanguageChanged += OnLanguageChanged;
-            Closed += (s, e) =>
+            ThemeManager.ThemeChanged += ApplyTheme;
+            FormClosed += (s, e) =>
             {
                 I18n.LanguageChanged -= OnLanguageChanged;
+                ThemeManager.ThemeChanged -= ApplyTheme;
                 jobxLogTimer?.Stop();
+                jobxLogTimer?.Dispose();
             };
         }
-
-        private DataGrid jobxGrid;
-        private TextBox jobxLog;
-        private TextBlock jobxLogLabel;
-        private Button jobxAddBtn, jobxBackupBtn, jobxBackupAllBtn, jobxOpenDirBtn;
-        private readonly List<KeyValuePair<DataGridTextColumn, string>> jobxColumns = new List<KeyValuePair<DataGridTextColumn, string>>();
-        private DispatcherTimer jobxLogTimer;
 
         private void OnLanguageChanged()
         {
-            Title = I18n.T("systemSettings");
-            if (Content is TabControl tabs)
+            Text = I18n.T("systemSettings");
+            var names = new[] { I18n.T("cameraDisplay"), I18n.T("cameraSettings"), I18n.T("displaySettings"), I18n.T("appSettings"), I18n.T("jobxBackup") };
+            for (int i = 0; i < tabs.Pages.Count && i < names.Length; i++)
+                tabs.Pages[i].Text = names[i];
+            foreach (var u in langUpdaters) u();
+            RebuildJobxTable();
+        }
+
+        private void ApplyTheme()
+        {
+            Mode = ThemeManager.TAMode;
+            if (jobxLog != null)
             {
-                var names = new[] { I18n.T("cameraDisplay"), I18n.T("cameraSettings"), I18n.T("displaySettings"), I18n.T("appSettings"), I18n.T("jobxBackup") };
-                for (int i = 0; i < tabs.Items.Count && i < names.Length; i++)
-                    ((TabItem)tabs.Items[i]).Header = names[i];
+                jobxLog.BackColor = ThemeManager.Bg3;
+                jobxLog.ForeColor = ThemeManager.Fg;
             }
-            UpdateJobxTexts();
         }
 
-        private void UpdateJobxTexts()
+        private static AntdUI.TabPage MakePage(string header, Control content)
         {
-            if (jobxAddBtn == null) return;
-            jobxAddBtn.Content = I18n.T("addCamera");
-            jobxBackupBtn.Content = I18n.T("backup");
-            jobxBackupAllBtn.Content = I18n.T("backupAll");
-            jobxOpenDirBtn.Content = I18n.T("openDir");
-            jobxLogLabel.Text = I18n.T("log");
-            foreach (var kv in jobxColumns)
-                kv.Key.Header = I18n.T(kv.Value);
+            var page = new AntdUI.TabPage { Text = header, Padding = new Padding(12) };
+            page.Controls.Add(content);
+            return page;
         }
 
-        private static TabItem MakePage(string header, UIElement content) =>
-            new TabItem { Header = header, Content = content };
-
-        private static TextBlock Label(string text) =>
-            new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-
-        private UIElement BuildDisplayPage()
+        private static AntdUI.Label MakeLabel(string text, bool bold = false) => new AntdUI.Label
         {
-            var panel = new StackPanel { Margin = new Thickness(16) };
+            Text = text,
+            AutoSize = true,
+            Font = bold ? new Font("Microsoft YaHei UI", 9f, FontStyle.Bold) : null,
+            Margin = new Padding(0, 8, 8, 8),
+        };
 
-            var countRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            countRow.Children.Add(Label(I18n.T("count")));
-            var countBox = new ComboBox { Width = 80 };
-            foreach (var n in new[] { 1, 2, 4, 6, 9, 12, 16 })
-                countBox.Items.Add(n);
-            countBox.SelectedItem = ConfigService.Camera.count;
-            countBox.SelectionChanged += (s, e) =>
+        // ---------- 相机显示 ----------
+        private Control BuildDisplayPage()
+        {
+            var panel = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var countRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+            var countLabel = MakeLabel(I18n.T("count"));
+            countRow.Controls.Add(countLabel);
+            var countSelect = new AntdUI.Select { Width = 120, Height = 30 };
+            var counts = new[] { 1, 2, 4, 6, 9, 12, 16 };
+            foreach (var n in counts) countSelect.Items.Add(n);
+            countSelect.SelectedIndex = Array.IndexOf(counts, ConfigService.Camera.count);
+            countSelect.SelectedIndexChanged += (s, e) =>
             {
-                if (countBox.SelectedItem is int n)
+                if (e.Value >= 0 && e.Value < counts.Length)
                 {
-                    ConfigService.Camera.count = n;
+                    ConfigService.Camera.count = counts[e.Value];
                     ConfigService.SaveCamera();
-                    (Application.Current.MainWindow as MainWindow)?.RebuildGrid();
+                    var main = Application.OpenForms.OfType<MainWindow>().FirstOrDefault();
+                    main?.RebuildGrid();
                 }
             };
-            countRow.Children.Add(countBox);
-            panel.Children.Add(countRow);
+            countRow.Controls.Add(countSelect);
+            panel.Controls.Add(countRow, 0, 0);
 
-            var delayRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            delayRow.Children.Add(Label(I18n.T("delay")));
-            var delayBox = new TextBox { Width = 80, Text = ConfigService.Camera.delay.ToString() };
-            delayBox.LostFocus += (s, e) =>
+            var delayRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+            var delayLabel = MakeLabel(I18n.T("delay"));
+            delayRow.Controls.Add(delayLabel);
+            var delayNum = new AntdUI.InputNumber
             {
-                if (int.TryParse(delayBox.Text, out var d) && d >= 0)
-                {
-                    ConfigService.Camera.delay = d;
-                    ConfigService.SaveCamera();
-                }
-                else
-                {
-                    delayBox.Text = ConfigService.Camera.delay.ToString();
-                }
+                Width = 120,
+                Height = 30,
+                Minimum = 0,
+                Maximum = 600,
+                Increment = 1,
+                Value = ConfigService.Camera.delay,
             };
-            delayRow.Children.Add(delayBox);
-            panel.Children.Add(delayRow);
+            delayNum.ValueChanged += (s, e) =>
+            {
+                ConfigService.Camera.delay = (int)e.Value;
+                ConfigService.SaveCamera();
+            };
+            delayRow.Controls.Add(delayNum);
+            panel.Controls.Add(delayRow, 0, 1);
 
+            langUpdaters.Add(() =>
+            {
+                countLabel.Text = I18n.T("count");
+                delayLabel.Text = I18n.T("delay");
+            });
             return panel;
         }
 
-        private UIElement BuildCameraPage()
+        // ---------- 相机设置 ----------
+        private Control BuildCameraPage()
         {
-            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var panel = new StackPanel { Margin = new Thickness(16) };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(0, 4, 8, 4) };
 
             for (int i = 0; i < ConfigService.Camera.count; i++)
             {
                 var item = ConfigService.EnsureItem(i);
-                var border = new Border
+                var card = new TableLayoutPanel
                 {
-                    BorderBrush = (System.Windows.Media.Brush)Application.Current.Resources["BorderBrush"],
-                    BorderThickness = new Thickness(1),
-                    Margin = new Thickness(0, 0, 0, 8),
-                    Padding = new Thickness(8),
+                    Dock = DockStyle.Top,
+                    ColumnCount = 1,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    BackColor = ThemeManager.Bg3,
+                    Padding = new Padding(8),
+                    Margin = new Padding(0, 0, 0, 8),
                 };
-                var inner = new StackPanel();
+                for (int r = 0; r < 4; r++) card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-                var header = new TextBlock
-                {
-                    Text = I18n.T("camera") + " " + (i + 1),
-                    FontWeight = FontWeights.Bold,
-                    Margin = new Thickness(0, 0, 0, 6),
-                };
-                inner.Children.Add(header);
+                var header = MakeLabel(I18n.T("camera") + " " + (i + 1), true);
+                card.Controls.Add(header, 0, 0);
 
-                var urlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-                urlRow.Children.Add(Label(I18n.T("url")));
-                var urlBox = new TextBox { Width = 320, Text = item.ip, IsReadOnly = item.locked };
+                var urlRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+                var urlLabel = MakeLabel(I18n.T("url"));
+                urlRow.Controls.Add(urlLabel);
+                var urlBox = new AntdUI.Input { Width = 380, Height = 30, Text = item.ip, ReadOnly = item.locked };
                 urlBox.LostFocus += (s, e) =>
                 {
                     item.ip = urlBox.Text;
                     ConfigService.SaveCamera();
                 };
-                urlRow.Children.Add(urlBox);
-                inner.Children.Add(urlRow);
+                urlRow.Controls.Add(urlBox);
+                card.Controls.Add(urlRow, 0, 1);
 
-                var remarkRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-                remarkRow.Children.Add(Label(I18n.T("remark")));
-                var remarkBox = new TextBox { Width = 320, Text = item.remark, IsReadOnly = item.locked };
+                var remarkRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+                var remarkLabel = MakeLabel(I18n.T("remark"));
+                remarkRow.Controls.Add(remarkLabel);
+                var remarkBox = new AntdUI.Input { Width = 380, Height = 30, Text = item.remark, ReadOnly = item.locked };
                 remarkBox.LostFocus += (s, e) =>
                 {
                     item.remark = remarkBox.Text;
                     ConfigService.SaveCamera();
                 };
-                remarkRow.Children.Add(remarkBox);
-                inner.Children.Add(remarkRow);
+                remarkRow.Controls.Add(remarkBox);
+                card.Controls.Add(remarkRow, 0, 2);
 
-                var lockRow = new StackPanel { Orientation = Orientation.Horizontal };
-                var lockBox = new CheckBox { Content = I18n.T("locked"), IsChecked = item.locked };
-                lockBox.Checked += (s, e) => SetLock(item, true, urlBox, remarkBox);
-                lockBox.Unchecked += (s, e) => SetLock(item, false, urlBox, remarkBox);
-                lockRow.Children.Add(lockBox);
-                inner.Children.Add(lockRow);
+                var lockCheck = new AntdUI.Checkbox { Text = I18n.T("locked"), Checked = item.locked, Margin = new Padding(0, 4, 0, 2) };
+                lockCheck.CheckedChanged += (s, e) =>
+                {
+                    item.locked = e.Value;
+                    urlBox.ReadOnly = e.Value;
+                    remarkBox.ReadOnly = e.Value;
+                    ConfigService.SaveCamera();
+                };
+                card.Controls.Add(lockCheck, 0, 3);
 
-                border.Child = inner;
-                panel.Children.Add(border);
+                panel.Controls.Add(card, 0, i);
+
+                int idx = i;
+                langUpdaters.Add(() =>
+                {
+                    header.Text = I18n.T("camera") + " " + (idx + 1);
+                    urlLabel.Text = I18n.T("url");
+                    remarkLabel.Text = I18n.T("remark");
+                    lockCheck.Text = I18n.T("locked");
+                });
             }
-
-            scroll.Content = panel;
-            return scroll;
-        }
-
-        private static void SetLock(CameraItem item, bool locked, TextBox urlBox, TextBox remarkBox)
-        {
-            item.locked = locked;
-            urlBox.IsReadOnly = locked;
-            remarkBox.IsReadOnly = locked;
-            ConfigService.SaveCamera();
-        }
-
-        private UIElement BuildThemePage()
-        {
-            var panel = new StackPanel { Margin = new Thickness(16) };
-            panel.Children.Add(Label(I18n.T("themeSetting")));
-
-            var dark = new RadioButton { Content = I18n.T("themeDark"), GroupName = "Theme", IsChecked = ThemeManager.Theme == "dark", Margin = new Thickness(0, 8, 0, 4) };
-            dark.Checked += (s, e) => ApplyTheme("dark");
-            var light = new RadioButton { Content = I18n.T("themeLight"), GroupName = "Theme", IsChecked = ThemeManager.Theme == "light", Margin = new Thickness(0, 0, 0, 4) };
-            light.Checked += (s, e) => ApplyTheme("light");
-
-            panel.Children.Add(dark);
-            panel.Children.Add(light);
             return panel;
         }
 
-        private static void ApplyTheme(string theme)
+        // ---------- 显示设置 ----------
+        private Control BuildThemePage()
+        {
+            var panel = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Padding = new Padding(0, 8, 0, 0) };
+            var themeLabel = MakeLabel(I18n.T("themeSetting"), true);
+            panel.Controls.Add(themeLabel);
+
+            var dark = new AntdUI.Radio { Text = I18n.T("themeDark"), Checked = ThemeManager.Theme == "dark", Margin = new Padding(0, 8, 0, 4) };
+            dark.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("dark"); };
+            var light = new AntdUI.Radio { Text = I18n.T("themeLight"), Checked = ThemeManager.Theme != "dark", Margin = new Padding(0, 0, 0, 4) };
+            light.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("light"); };
+
+            panel.Controls.Add(dark);
+            panel.Controls.Add(light);
+            langUpdaters.Add(() =>
+            {
+                themeLabel.Text = I18n.T("themeSetting");
+                dark.Text = I18n.T("themeDark");
+                light.Text = I18n.T("themeLight");
+            });
+            return panel;
+        }
+
+        private void ApplyThemeChoice(string theme)
         {
             ThemeManager.Apply(theme);
             ConfigService.App.theme = theme;
             ConfigService.SaveApp();
-            if (Application.Current.MainWindow != null)
-                Application.Current.MainWindow.Background = (System.Windows.Media.Brush)Application.Current.Resources["BgBrush"];
         }
 
-        private UIElement BuildLanguagePage()
+        // ---------- 软件设置 ----------
+        private Control BuildLanguagePage()
         {
-            var panel = new StackPanel { Margin = new Thickness(16) };
-            panel.Children.Add(Label(I18n.T("languageSetting")));
+            var panel = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Padding = new Padding(0, 8, 0, 0) };
+            var langLabel = MakeLabel(I18n.T("languageSetting"), true);
+            panel.Controls.Add(langLabel);
 
-            var zh = new RadioButton { Content = I18n.T("languageZh"), GroupName = "Language", IsChecked = I18n.Language == "zh", Margin = new Thickness(0, 8, 0, 4) };
-            zh.Checked += (s, e) => ApplyLanguage("zh");
-            var en = new RadioButton { Content = I18n.T("languageEn"), GroupName = "Language", IsChecked = I18n.Language == "en", Margin = new Thickness(0, 0, 0, 4) };
-            en.Checked += (s, e) => ApplyLanguage("en");
+            var zh = new AntdUI.Radio { Text = I18n.T("languageZh"), Checked = I18n.Language == "zh", Margin = new Padding(0, 8, 0, 4) };
+            zh.CheckedChanged += (s, e) => { if (e.Value) ApplyLanguageChoice("zh"); };
+            var en = new AntdUI.Radio { Text = I18n.T("languageEn"), Checked = I18n.Language == "en", Margin = new Padding(0, 0, 0, 4) };
+            en.CheckedChanged += (s, e) => { if (e.Value) ApplyLanguageChoice("en"); };
 
-            panel.Children.Add(zh);
-            panel.Children.Add(en);
+            panel.Controls.Add(zh);
+            panel.Controls.Add(en);
+            langUpdaters.Add(() =>
+            {
+                langLabel.Text = I18n.T("languageSetting");
+                zh.Text = I18n.T("languageZh");
+                en.Text = I18n.T("languageEn");
+            });
             return panel;
         }
 
-        private static void ApplyLanguage(string lang)
+        private void ApplyLanguageChoice(string lang)
         {
             I18n.SetLanguage(lang);
             ConfigService.App.language = lang;
             ConfigService.SaveApp();
         }
 
-        private UIElement BuildJobxPage()
+        // ---------- JOBX 备份 ----------
+        private Control BuildJobxPage()
         {
-            var panel = new StackPanel { Margin = new Thickness(12) };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1 };
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 235));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+            var btns = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
 
-            jobxAddBtn = new Button { MinWidth = 90, Height = 28, Margin = new Thickness(0, 0, 8, 0) };
+            jobxAddBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("addCamera") };
             jobxAddBtn.Click += (s, e) =>
             {
                 ConfigService.JobxBackup.cameras.Add(new JobxCameraConfig());
                 ConfigService.SaveJobxBackup();
-                SafeJobxRefresh();
+                RebuildJobxTable();
             };
-            btns.Children.Add(jobxAddBtn);
+            btns.Controls.Add(jobxAddBtn);
 
-            jobxBackupBtn = new Button { MinWidth = 90, Height = 28, Margin = new Thickness(0, 0, 8, 0) };
+            jobxBackupBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("backup"), Margin = new Padding(8, 0, 0, 0) };
             jobxBackupBtn.Click += (s, e) =>
             {
-                var idx = jobxGrid.SelectedIndex;
+                var idx = jobxGrid?.SelectedIndex ?? -1;
                 if (idx < 0)
                 {
                     JobxBackupService.AddLog("WARN", I18n.T("jobxSelectCamera"));
@@ -262,184 +302,212 @@ namespace CameraViewerDotnet
                 }
                 System.Threading.Tasks.Task.Run(() => JobxBackupService.BackupCamera(idx));
             };
-            btns.Children.Add(jobxBackupBtn);
+            btns.Controls.Add(jobxBackupBtn);
 
-            jobxBackupAllBtn = new Button { MinWidth = 90, Height = 28, Margin = new Thickness(0, 0, 8, 0) };
+            jobxBackupAllBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("backupAll"), Margin = new Padding(8, 0, 0, 0) };
             jobxBackupAllBtn.Click += (s, e) => JobxBackupService.BackupAll();
-            btns.Children.Add(jobxBackupAllBtn);
+            btns.Controls.Add(jobxBackupAllBtn);
 
-            jobxOpenDirBtn = new Button { MinWidth = 90, Height = 28 };
+            jobxOpenDirBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("openDir"), Margin = new Padding(8, 0, 0, 0) };
             jobxOpenDirBtn.Click += (s, e) =>
             {
                 string dir = null;
-                if (jobxGrid.SelectedItem is JobxCameraConfig cam && !string.IsNullOrWhiteSpace(cam.backup_directory))
-                    dir = cam.backup_directory;
+                var idx = jobxGrid?.SelectedIndex ?? -1;
+                if (idx >= 0 && idx < jobxRows.Count && !string.IsNullOrWhiteSpace(jobxRows[idx].src.backup_directory))
+                    dir = jobxRows[idx].src.backup_directory;
                 JobxBackupService.OpenBackupDirectory(dir);
             };
-            btns.Children.Add(jobxOpenDirBtn);
-            panel.Children.Add(btns);
+            btns.Controls.Add(jobxOpenDirBtn);
+            panel.Controls.Add(btns, 0, 0);
 
-            jobxGrid = new DataGrid
-            {
-                AutoGenerateColumns = false,
-                CanUserAddRows = false,
-                CanUserDeleteRows = false,
-                Height = 220,
-                Margin = new Thickness(0, 0, 0, 8),
-                ItemsSource = ConfigService.JobxBackup.cameras,
-            };
+            jobxHost = new TableLayoutPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 4) };
+            panel.Controls.Add(jobxHost, 0, 1);
 
-            DataGridTextColumn TextCol(string key, string path, double width)
-            {
-                var col = new DataGridTextColumn
-                {
-                    Header = I18n.T(key),
-                    Width = new DataGridLength(width),
-                    Binding = new Binding(path) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-                };
-                jobxColumns.Add(new KeyValuePair<DataGridTextColumn, string>(col, key));
-                return col;
-            }
-
-            jobxGrid.Columns.Add(TextCol("name", "name", 110));
-            jobxGrid.Columns.Add(TextCol("ip", "ip", 100));
-            jobxGrid.Columns.Add(TextCol("port", "ftp_port", 55));
-            jobxGrid.Columns.Add(TextCol("username", "ftp_username", 80));
-            jobxGrid.Columns.Add(TextCol("password", "ftp_password", 80));
-            jobxGrid.Columns.Add(TextCol("backupDir", "backup_directory", 130));
-
-            var selectCol = new DataGridTemplateColumn { Header = I18n.T("select"), Width = 64 };
-            var selFactory = new FrameworkElementFactory(typeof(Button));
-            selFactory.SetValue(Button.ContentProperty, I18n.T("select"));
-            selFactory.SetValue(Button.HeightProperty, 24.0);
-            selFactory.AddHandler(Button.ClickEvent, new RoutedEventHandler((s, e) =>
-            {
-                if (((FrameworkElement)s).DataContext is JobxCameraConfig cam)
-                {
-                    try
-                    {
-                        var dlg = new System.Windows.Forms.FolderBrowserDialog
-                        {
-                            Description = I18n.T("selectBackupDir"),
-                            ShowNewFolderButton = true,
-                        };
-                        if (!string.IsNullOrWhiteSpace(cam.backup_directory) && System.IO.Directory.Exists(cam.backup_directory))
-                            dlg.SelectedPath = cam.backup_directory;
-                        var owner = Win32WindowHost.FromVisual((DependencyObject)s);
-                        if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK
-                            && !string.IsNullOrWhiteSpace(dlg.SelectedPath))
-                        {
-                            cam.backup_directory = dlg.SelectedPath;
-                            ConfigService.SaveJobxBackup();
-                            SafeJobxRefresh();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Windows.MessageBox.Show(ex.Message, I18n.T("error"),
-                            MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-            }));
-            selectCol.CellTemplate = new DataTemplate { VisualTree = selFactory };
-            jobxGrid.Columns.Add(selectCol);
-
-            var checkStyle = new Style(typeof(CheckBox));
-            checkStyle.Setters.Add(new EventSetter(CheckBox.CheckedEvent, new RoutedEventHandler((s, e) => ConfigService.SaveJobxBackup())));
-            checkStyle.Setters.Add(new EventSetter(CheckBox.UncheckedEvent, new RoutedEventHandler((s, e) => ConfigService.SaveJobxBackup())));
-
-            jobxGrid.Columns.Add(new DataGridCheckBoxColumn
-            {
-                Header = I18n.T("ftps"),
-                Width = 55,
-                Binding = new Binding("ftps_enabled") { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-                ElementStyle = checkStyle,
-            });
-            jobxGrid.Columns.Add(new DataGridCheckBoxColumn
-            {
-                Header = I18n.T("trustCerts"),
-                Width = 70,
-                Binding = new Binding("trust_all_certs") { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-                ElementStyle = checkStyle,
-            });
-
-            var deleteCol = new DataGridTemplateColumn { Header = "", Width = 60 };
-            var deleteFactory = new FrameworkElementFactory(typeof(Button));
-            deleteFactory.SetValue(Button.ContentProperty, I18n.T("delete"));
-            deleteFactory.AddHandler(Button.ClickEvent, new RoutedEventHandler((s, e) =>
-            {
-                if (((FrameworkElement)s).DataContext is JobxCameraConfig cam)
-                {
-                    ConfigService.JobxBackup.cameras.Remove(cam);
-                    ConfigService.SaveJobxBackup();
-                    SafeJobxRefresh();
-                }
-            }));
-            deleteCol.CellTemplate = new DataTemplate { VisualTree = deleteFactory };
-            jobxGrid.Columns.Add(deleteCol);
-
-            jobxGrid.CellEditEnding += (s, e) => ConfigService.SaveJobxBackup();
-            panel.Children.Add(jobxGrid);
-
-            jobxLogLabel = new TextBlock { Text = I18n.T("log"), FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 4) };
-            panel.Children.Add(jobxLogLabel);
+            var logLabel = MakeLabel(I18n.T("log"), true);
+            logLabel.Margin = new Padding(0, 0, 0, 4);
+            panel.Controls.Add(logLabel, 0, 2);
 
             jobxLog = new TextBox
             {
-                IsReadOnly = true,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Height = 170,
-                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-                Text = "",
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                Multiline = true,
+                ScrollBars = ScrollBars.Vertical,
+                Font = new Font("Consolas", 9f),
+                BackColor = ThemeManager.Bg3,
+                ForeColor = ThemeManager.Fg,
+                BorderStyle = BorderStyle.FixedSingle,
             };
-            panel.Children.Add(jobxLog);
+            panel.Controls.Add(jobxLog, 0, 3);
 
-            jobxLogTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            jobxLogTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             jobxLogTimer.Tick += (s, e) => RefreshJobxLog();
             jobxLogTimer.Start();
+            RefreshJobxLog();
 
+            langUpdaters.Add(UpdateJobxTexts);
             UpdateJobxTexts();
+            RebuildJobxTable();
             return panel;
         }
 
-        private void SafeJobxRefresh()
+        private void UpdateJobxTexts()
         {
-            try { jobxGrid.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true); } catch { }
-            try { jobxGrid.CancelEdit(); } catch { }
-            jobxGrid.Items.Refresh();
+            jobxAddBtn.Text = I18n.T("addCamera");
+            jobxBackupBtn.Text = I18n.T("backup");
+            jobxBackupAllBtn.Text = I18n.T("backupAll");
+            jobxOpenDirBtn.Text = I18n.T("openDir");
+        }
+
+        private class JobxRow
+        {
+            public JobxCameraConfig src;
+            public string name, ip, port, username, password, backupDir;
+            public bool ftps, trust;
+            public CellButton select;
+            public CellButton delete;
+
+            public void SyncFromSrc()
+            {
+                name = src.name;
+                ip = src.ip;
+                port = src.ftp_port.ToString();
+                username = src.ftp_username;
+                password = src.ftp_password;
+                backupDir = src.backup_directory;
+                ftps = src.ftps_enabled;
+                trust = src.trust_all_certs;
+            }
+        }
+
+        private void RebuildJobxTable()
+        {
+            if (jobxHost == null) return;
+            jobxRows.Clear();
+            foreach (var cam in ConfigService.JobxBackup.cameras)
+            {
+                var row = new JobxRow { src = cam };
+                row.SyncFromSrc();
+                row.select = new CellButton("select", I18n.T("select"));
+                row.delete = new CellButton("delete", I18n.T("delete"));
+                jobxRows.Add(row);
+            }
+
+            var columns = new ColumnCollection
+            {
+                new Column("name", I18n.T("name")) { Editable = true, Width = "110" },
+                new Column("ip", I18n.T("ip")) { Editable = true, Width = "100" },
+                new Column("port", I18n.T("port")) { Editable = true, Width = "55" },
+                new Column("username", I18n.T("username")) { Editable = true, Width = "80" },
+                new Column("password", I18n.T("password")) { Editable = true, Width = "80" },
+                new Column("backupDir", I18n.T("backupDir")) { Editable = true, Width = "130" },
+                new Column("select", I18n.T("select")) { Width = "64" },
+                new ColumnCheck("ftps", I18n.T("ftps")) { Width = "55" },
+                new ColumnCheck("trust", I18n.T("trustCerts")) { Width = "70" },
+                new Column("delete", "") { Width = "60" },
+            };
+
+            var table = new AntdUI.Table
+            {
+                Dock = DockStyle.Fill,
+                Columns = columns,
+                DataSource = jobxRows,
+                Bordered = true,
+                EditMode = TEditMode.DoubleClick,
+                RowHeight = 32,
+            };
+            table.CellEndEdit += JobxCellEndEdit;
+            table.CheckedChanged += JobxCheckedChanged;
+            table.CellButtonClick += JobxCellButtonClick;
+
+            jobxGrid = table;
+            jobxHost.Controls.Clear();
+            jobxHost.Controls.Add(table);
+        }
+
+        private bool JobxCellEndEdit(object s, TableEndEditEventArgs e)
+        {
+            var row = e.RowIndex;
+            if (row < 0 || row >= jobxRows.Count) return false;
+            var r = jobxRows[row];
+            var key = e.Column?.Key;
+            switch (key)
+            {
+                case "name": r.src.name = e.Value; break;
+                case "ip": r.src.ip = e.Value; break;
+                case "port":
+                    if (int.TryParse(e.Value, out var p) && p > 0 && p < 65536) r.src.ftp_port = p;
+                    else r.SyncFromSrc();
+                    break;
+                case "username": r.src.ftp_username = e.Value; break;
+                case "password": r.src.ftp_password = e.Value; break;
+                case "backupDir": r.src.backup_directory = e.Value; break;
+                default: return false;
+            }
+            r.SyncFromSrc();
+            ConfigService.SaveJobxBackup();
+            return false;
+        }
+
+        private void JobxCheckedChanged(object s, TableCheckEventArgs e)
+        {
+            var row = e.RowIndex;
+            if (row < 0 || row >= jobxRows.Count) return;
+            var r = jobxRows[row];
+            var key = e.Column?.Key;
+            if (key == "ftps") { r.src.ftps_enabled = e.Value; r.ftps = e.Value; }
+            else if (key == "trust") { r.src.trust_all_certs = e.Value; r.trust = e.Value; }
+            else return;
+            ConfigService.SaveJobxBackup();
+        }
+
+        private void JobxCellButtonClick(object s, TableButtonEventArgs e)
+        {
+            var row = e.RowIndex;
+            if (row < 0 || row >= jobxRows.Count) return;
+            var r = jobxRows[row];
+            var id = e.Btn?.Id;
+            if (id == "select")
+            {
+                try
+                {
+                    using var dlg = new System.Windows.Forms.FolderBrowserDialog
+                    {
+                        Description = I18n.T("selectBackupDir"),
+                        ShowNewFolderButton = true,
+                    };
+                    if (!string.IsNullOrWhiteSpace(r.src.backup_directory) && System.IO.Directory.Exists(r.src.backup_directory))
+                        dlg.SelectedPath = r.src.backup_directory;
+                    if (dlg.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dlg.SelectedPath))
+                    {
+                        r.src.backup_directory = dlg.SelectedPath;
+                        r.backupDir = dlg.SelectedPath;
+                        ConfigService.SaveJobxBackup();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, I18n.T("error"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            else if (id == "delete")
+            {
+                ConfigService.JobxBackup.cameras.Remove(r.src);
+                ConfigService.SaveJobxBackup();
+                RebuildJobxTable();
+            }
         }
 
         private void RefreshJobxLog()
         {
-            if (jobxLog == null) return;
+            if (jobxLog == null || jobxLog.IsDisposed) return;
             var logs = JobxBackupService.GetLogs();
             var sb = new System.Text.StringBuilder();
             foreach (var entry in logs)
                 sb.Append('[').Append(entry.timestamp).Append("] [").Append(entry.level).Append("] ").AppendLine(entry.message);
-            var text = sb.ToString();
-            jobxLog.Text = text;
-            jobxLog.ScrollToEnd();
-        }
-
-        private class Win32WindowHost : System.Windows.Forms.IWin32Window
-        {
-            public IntPtr Handle { get; private set; }
-            private Win32WindowHost(IntPtr handle) { Handle = handle; }
-            public static Win32WindowHost FromVisual(System.Windows.DependencyObject d)
-            {
-                try
-                {
-                    var win = System.Windows.Window.GetWindow(d);
-                    if (win != null)
-                    {
-                        var helper = new System.Windows.Interop.WindowInteropHelper(win);
-                        return new Win32WindowHost(helper.Handle);
-                    }
-                }
-                catch { }
-                return null;
-            }
+            jobxLog.Text = sb.ToString();
+            jobxLog.SelectionStart = jobxLog.TextLength;
+            jobxLog.ScrollToCaret();
         }
     }
 }

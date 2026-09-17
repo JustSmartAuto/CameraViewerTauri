@@ -1,6 +1,6 @@
 # CameraViewerDotnet
 
-基于 .NET 8 的 WPF 工业相机 HMI 网页查看器（复刻 CameraViewerTauri 核心功能），搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序），不易被杀毒软件误删 DLL 导致无法启动。
+基于 .NET 8 的 WinForms 工业相机 HMI 网页查看器（复刻 CameraViewerTauri 核心功能），搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序），不易被杀毒软件误删 DLL 导致无法启动。
 
 ## 截图
 
@@ -26,9 +26,9 @@
 
 | 部分 | 技术 |
 |---|---|
-| 主程序 `CameraViewer/` | .NET 8 WPF，**纯 C# 实现（无 XAML）**，HandyControls 3.7.0（主题/控件皮肤），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS） |
+| 主程序 `CameraViewer/` | .NET 8 WinForms，**纯 C# 实现（无 XAML）**，AntdUI 2.4.10（Ant Design 风格控件/无边框窗口/明暗主题），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS） |
 | 启动器 `CameraViewer.Launcher/` | .NET Framework 4.8（Win10 内置 .NET 4 即可运行），内嵌运行时安装包与主程序 exe 资源 |
-| UI 风格 | VS Code 配色：暗黑 `#1e1e1e/#252526/#0e639c`，明亮 `#f0f0f0/#0078d4` |
+| UI 风格 | AntdUI 控件 + VS Code 配色：暗黑 `#1e1e1e/#252526/#0e639c`，明亮 `#f0f0f0/#0078d4` |
 
 启动器工作流程：检测 `Microsoft.WindowsDesktop.App 8.x`（`dotnet --list-runtimes`，PATH 与 `C:\Program Files\dotnet` 双路探测）→ 缺失则静默安装内嵌的 windowsdesktop-runtime-8.0.29 → 每次覆盖释放主程序到 `%LOCALAPPDATA%\CameraViewerDotnet\App\` 并启动。
 

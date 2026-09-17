@@ -1,18 +1,22 @@
 using System;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using System.Drawing;
+using System.Windows.Forms;
+using AntdUI;
 using CameraViewer;
+using Panel = System.Windows.Forms.Panel;
 
 namespace CameraViewerDotnet
 {
-    public class CameraCell : UserControl
+    public class CameraCell : Panel
     {
         private readonly int id;
-        private readonly TextBox urlBox;
-        private readonly TextBox remarkBox;
-        private readonly Button lockBtn;
-        private readonly Microsoft.Web.WebView2.Wpf.WebView2 webView;
+        private readonly AntdUI.Input urlBox;
+        private readonly AntdUI.Input remarkBox;
+        private readonly AntdUI.Button lockBtn;
+        private readonly AntdUI.Button refreshBtn;
+        private readonly AntdUI.Button maxBtn;
+        private readonly Panel top;
+        private readonly Microsoft.Web.WebView2.WinForms.WebView2 webView;
         private bool webViewReady;
         private bool isMaximized;
         private static string hmiI18nScript;
@@ -68,41 +72,43 @@ namespace CameraViewerDotnet
             this.id = id;
             var item = ConfigService.EnsureItem(id);
 
-            Background = (System.Windows.Media.Brush)Application.Current.Resources["BgBrush2"];
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+            BackColor = ThemeManager.Bg2;
+            Padding = new Padding(1);
 
-            var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = ThemeManager.Bg2 };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-            var top = new Grid { Margin = new Thickness(4, 4, 4, 2) };
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            top = new Panel { Dock = DockStyle.Fill, Height = 30, BackColor = ThemeManager.Bg2 };
+            var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-            urlBox = new TextBox
+            urlBox = new AntdUI.Input
             {
+                Dock = DockStyle.Fill,
                 Text = item.ip,
-                IsReadOnly = item.locked,
-                ToolTip = I18n.T("url"),
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Height = 26,
+                ReadOnly = item.locked,
+                PlaceholderText = I18n.T("urlPlaceholder"),
             };
             urlBox.LostFocus += (s, e) => CommitUrl();
-            urlBox.KeyDown += (s, e) => { if (e.Key == Key.Enter) CommitUrl(); };
-            Grid.SetColumn(urlBox, 0);
-            top.Children.Add(urlBox);
-            AttachPlaceholder(urlBox, "urlPlaceholder", out urlPlaceholderBrush);
-
-            remarkBox = new TextBox
+            urlBox.KeyDown += (s, e) =>
             {
+                if (e.KeyCode == Keys.Enter) { CommitUrl(); e.SuppressKeyPress = true; }
+            };
+            topGrid.Controls.Add(urlBox, 0, 0);
+
+            remarkBox = new AntdUI.Input
+            {
+                Dock = DockStyle.Fill,
                 Text = item.remark,
-                IsReadOnly = item.locked,
-                ToolTip = I18n.T("remark"),
-                VerticalContentAlignment = VerticalAlignment.Center,
-                Height = 26,
-                Margin = new Thickness(4, 0, 0, 0),
+                ReadOnly = item.locked,
+                PlaceholderText = I18n.T("remarkPlaceholder"),
+                Margin = new Padding(4, 0, 0, 0),
             };
             remarkBox.LostFocus += (s, e) =>
             {
@@ -110,37 +116,30 @@ namespace CameraViewerDotnet
                 it.remark = remarkBox.Text;
                 ConfigService.SaveCamera();
             };
-            Grid.SetColumn(remarkBox, 1);
-            top.Children.Add(remarkBox);
-            AttachPlaceholder(remarkBox, "remarkPlaceholder", out remarkPlaceholderBrush);
+            topGrid.Controls.Add(remarkBox, 1, 0);
 
-            lockBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
+            lockBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
             lockBtn.Click += (s, e) => ToggleLock();
-            Grid.SetColumn(lockBtn, 2);
-            top.Children.Add(lockBtn);
+            topGrid.Controls.Add(lockBtn, 2, 0);
 
-            refreshBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
+            refreshBtn = new AntdUI.Button { Text = I18n.T("refresh"), IconSvg = AntIcon.Svg(AntIcon.Reload), Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
             refreshBtn.Click += async (s, e) => await ReloadAsync();
-            Grid.SetColumn(refreshBtn, 3);
-            top.Children.Add(refreshBtn);
+            topGrid.Controls.Add(refreshBtn, 3, 0);
 
-            maxBtn = new Button { Width = 78, Height = 26, Margin = new Thickness(4, 0, 0, 0) };
+            maxBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
             maxBtn.Click += (s, e) =>
             {
                 isMaximized = !isMaximized;
                 UpdateMaxBtn();
                 ToggleMaximize?.Invoke(this);
             };
-            Grid.SetColumn(maxBtn, 4);
-            top.Children.Add(maxBtn);
+            topGrid.Controls.Add(maxBtn, 4, 0);
             UpdateLockBtn();
             UpdateMaxBtn();
-            refreshBtn.Content = AntIcon.Content(AntIcon.Reload, I18n.T("refresh"));
 
-            grid.Children.Add(top);
+            top.Controls.Add(topGrid);
 
-            webView = new Microsoft.Web.WebView2.Wpf.WebView2();
-            webView.Margin = new Thickness(4, 2, 4, 4);
+            webView = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
             webView.CoreWebView2InitializationCompleted += async (s, e) =>
             {
                 if (e.IsSuccess)
@@ -155,60 +154,49 @@ namespace CameraViewerDotnet
                 }
                 Navigate();
             };
-            Grid.SetRow(webView, 1);
-            grid.Children.Add(webView);
 
-            Content = grid;
+            // Dock 顺序：Fill 先加入，顶部栏后加入
+            root.Controls.Add(webView, 0, 1);
+            root.Controls.Add(top, 0, 0);
+            Controls.Add(root);
 
             I18n.LanguageChanged += OnLanguageChanged;
-            Unloaded += (s, e) => I18n.LanguageChanged -= OnLanguageChanged;
-        }
-
-        private readonly Button maxBtn;
-        private readonly Button refreshBtn;
-        private System.Windows.Media.VisualBrush urlPlaceholderBrush;
-        private System.Windows.Media.VisualBrush remarkPlaceholderBrush;
-
-        private void AttachPlaceholder(TextBox box, string placeholderKey, out System.Windows.Media.VisualBrush brush)
-        {
-            var tb = new TextBlock
+            ThemeManager.ThemeChanged += ApplyTheme;
+            Disposed += (s, e) =>
             {
-                Text = I18n.T(placeholderKey),
-                Foreground = (System.Windows.Media.Brush)Application.Current.Resources["FgDimBrush"],
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(3, 0, 0, 0),
-                IsHitTestVisible = false,
+                I18n.LanguageChanged -= OnLanguageChanged;
+                ThemeManager.ThemeChanged -= ApplyTheme;
             };
-            var b = new System.Windows.Media.VisualBrush(tb)
-            {
-                Stretch = System.Windows.Media.Stretch.None,
-                AlignmentX = System.Windows.Media.AlignmentX.Left,
-                AlignmentY = System.Windows.Media.AlignmentY.Center,
-            };
-            brush = b;
-            box.TextChanged += (s, e) => box.Background = string.IsNullOrEmpty(box.Text) ? b : null;
-            box.Background = string.IsNullOrEmpty(box.Text) ? b : null;
         }
 
         private void UpdateLockBtn()
         {
             var locked = ConfigService.EnsureItem(id).locked;
-            lockBtn.Content = AntIcon.Content(locked ? AntIcon.Lock : AntIcon.Unlock, locked ? I18n.T("unlock") : I18n.T("lock"));
+            lockBtn.Text = locked ? I18n.T("unlock") : I18n.T("lock");
+            lockBtn.IconSvg = AntIcon.Svg(locked ? AntIcon.Lock : AntIcon.Unlock);
         }
 
-        private void UpdateMaxBtn() =>
-            maxBtn.Content = AntIcon.Content(isMaximized ? AntIcon.Shrink : AntIcon.Expand, isMaximized ? I18n.T("restore") : I18n.T("maximize"));
+        private void UpdateMaxBtn()
+        {
+            maxBtn.Text = isMaximized ? I18n.T("restore") : I18n.T("maximize");
+            maxBtn.IconSvg = AntIcon.Svg(isMaximized ? AntIcon.Shrink : AntIcon.Expand);
+        }
 
         private void OnLanguageChanged()
         {
             UpdateLockBtn();
             UpdateMaxBtn();
-            refreshBtn.Content = AntIcon.Content(AntIcon.Reload, I18n.T("refresh"));
-            urlBox.ToolTip = I18n.T("url");
-            remarkBox.ToolTip = I18n.T("remark");
-            if (urlPlaceholderBrush?.Visual is TextBlock utb) utb.Text = I18n.T("urlPlaceholder");
-            if (remarkPlaceholderBrush?.Visual is TextBlock rtb) rtb.Text = I18n.T("remarkPlaceholder");
+            refreshBtn.Text = I18n.T("refresh");
+            refreshBtn.IconSvg = AntIcon.Svg(AntIcon.Reload);
+            urlBox.PlaceholderText = I18n.T("urlPlaceholder");
+            remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
             PostHmiLang();
+        }
+
+        public void ApplyTheme()
+        {
+            BackColor = ThemeManager.Bg2;
+            top.BackColor = ThemeManager.Bg2;
         }
 
         private void CommitUrl()
@@ -224,8 +212,8 @@ namespace CameraViewerDotnet
         {
             var item = ConfigService.EnsureItem(id);
             item.locked = !item.locked;
-            urlBox.IsReadOnly = item.locked;
-            remarkBox.IsReadOnly = item.locked;
+            urlBox.ReadOnly = item.locked;
+            remarkBox.ReadOnly = item.locked;
             UpdateLockBtn();
             ConfigService.SaveCamera();
         }
@@ -244,6 +232,7 @@ namespace CameraViewerDotnet
 
         public async System.Threading.Tasks.Task ReloadAsync()
         {
+            if (IsDisposed || Disposing) return;
             if (!webViewReady)
             {
                 try { await webView.EnsureCoreWebView2Async(null); }

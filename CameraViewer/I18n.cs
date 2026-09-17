@@ -71,7 +71,7 @@ namespace CameraViewer
             ["error"] = new[] { "错误", "Error" },
             ["about"] = new[] { "关于", "About" },
             ["aboutDesc"] = new[] { "多路网络相机监控查看工具，支持 MJPG/RTSP 视频流、JOBX 作业备份、HMI 语言跟随等功能。", "Multi-channel network camera monitoring tool with MJPG/RTSP streams, JOBX backup, and HMI language-following." },
-            ["aboutTech"] = new[] { "技术栈：WPF (.NET 8) + WebView2 + FluentFTP", "Tech stack: WPF (.NET 8) + WebView2 + FluentFTP" },
+            ["aboutTech"] = new[] { "技术栈：WinForms + AntdUI (.NET 8) + WebView2 + FluentFTP", "Tech stack: WinForms + AntdUI (.NET 8) + WebView2 + FluentFTP" },
             ["aboutRepo"] = new[] { "项目仓库", "Repository" },
             ["aboutClose"] = new[] { "关闭", "Close" },
         };
