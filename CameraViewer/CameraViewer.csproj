@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CameraViewerDotnet</AssemblyName>
+    <RootNamespace>CameraViewerDotnet</RootNamespace>
+    <Product>CameraViewerDotnet</Product>
+    <Version>26.9.17.14</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>CameraViewerDotnet.App</StartupObject>
+    <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <PackageReference Include="HandyControls" Version="3.7.0" />
+    <Resource Include="..\assets\icon.ico" />
+  </ItemGroup>
+
+</Project>
