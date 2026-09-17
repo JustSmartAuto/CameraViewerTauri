@@ -18,6 +18,7 @@
 - [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：改为 `AntdUI.Window` + Tabs；JOBX 相机表格从 WPF DataGrid 改为 AntdUI Table（单元格编辑/勾选/按钮事件）；备份目录选择仍用 WinForms `FolderBrowserDialog`。
 - [CameraViewer/AboutWindow.cs](CameraViewer/AboutWindow.cs)：改为 `AntdUI.Window`。
 - **修复 JOBX "添加相机"无反应**：数据实际已写入配置但表格不刷新——AntdUI.Table 数据绑定要求行模型为 public 类 + public 属性，`JobxRow` 由 private 嵌套类 + 字段改为 public 类 + 属性后表格正常显示/刷新。
+- **修复 JOBX "备份"/"选择"（文件夹）按钮无反应**：AntdUI.Table 行索引为 **1-based**（`_rows[0]` 是表头行，`SelectedIndex` 亦从 1 开始），旧代码按 0-based 语义处理导致整体 off-by-one——"备份"按钮把 `SelectedIndex` 直接传给 0-based 的 `BackupCamera(index)` 造成越界（返回失败结果且不写日志，Task 异常又被全局 `UnobservedTaskException` 静默吞掉，表现"无反应"）；表格行内"选择/删除"按钮（`CellButtonClick`）、单元格编辑（`CellEndEdit`）、勾选（`CheckedChanged`）同样偏移失效。统一改为 1-based 语义（`SelectedIndex-1` / `e.RowIndex-1`，CellButtonClick 优先用 `e.Record` 匹配行对象）；备份 Task 内增加 try/catch 写 ERROR 日志避免静默失败。
 - **按钮浅蓝色描边**：所有 `TTypeMini.Default` 按钮（工具栏、相机格、JOBX 备份页）统一 `DefaultBorderColor=#91CAFF` + `BorderWidth=1`（AntdUI 2.4.10 无 `BorderColor` 属性，属性名为 `DefaultBorderColor`）；[ThemeManager.cs](CameraViewer/ThemeManager.cs) 新增 `BtnBorder` 调色板项。
 - **修复页面内容残缺**：AntdUI.Radio 默认 `AutoSizeMode=None` 导致 FlowLayoutPanel 测量高度为 0（显示设置/软件设置页单选按钮不显示）→ 显式 `AutoSizeMode=TAutoSize.Auto`；AntdUI.Label 长文本 AutoSize 测量不准导致关于页版本号/描述/技术栈截断 → 改用原生 WinForms `Label`（AutoSizing+MaximumSize 换行可靠）；JOBX 表格空数据时 `EmptyHeader=true` 显示列头；关于页版本号截断 commit 哈希（`InformationalVersion` 去除 `+` 后缀）。
 - [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：关于页技术栈文案更新为 "WinForms + AntdUI (.NET 8) + WebView2 + FluentFTP"。

@@ -312,13 +312,19 @@ namespace CameraViewerDotnet
             jobxBackupBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("backup"), Margin = new Padding(8, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             jobxBackupBtn.Click += (s, e) =>
             {
-                var idx = jobxGrid?.SelectedIndex ?? -1;
-                if (idx < 0)
+                var row = (jobxGrid?.SelectedIndex ?? -1) - 1; // AntdUI SelectedIndex 为 1-based
+                var r = row >= 0 && row < jobxRows.Count ? jobxRows[row] : null;
+                if (r == null)
                 {
                     JobxBackupService.AddLog("WARN", I18n.T("jobxSelectCamera"));
                     return;
                 }
-                System.Threading.Tasks.Task.Run(() => JobxBackupService.BackupCamera(idx));
+                var cam = r.src;
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    try { JobxBackupService.BackupCamera(cam); }
+                    catch (Exception ex) { JobxBackupService.AddLog("ERROR", ex.Message); }
+                });
             };
             btns.Controls.Add(jobxBackupBtn);
 
@@ -330,9 +336,9 @@ namespace CameraViewerDotnet
             jobxOpenDirBtn.Click += (s, e) =>
             {
                 string dir = null;
-                var idx = jobxGrid?.SelectedIndex ?? -1;
-                if (idx >= 0 && idx < jobxRows.Count && !string.IsNullOrWhiteSpace(jobxRows[idx].src.backup_directory))
-                    dir = jobxRows[idx].src.backup_directory;
+                var row = (jobxGrid?.SelectedIndex ?? -1) - 1; // AntdUI SelectedIndex 为 1-based
+                if (row >= 0 && row < jobxRows.Count && !string.IsNullOrWhiteSpace(jobxRows[row].src.backup_directory))
+                    dir = jobxRows[row].src.backup_directory;
                 JobxBackupService.OpenBackupDirectory(dir);
             };
             btns.Controls.Add(jobxOpenDirBtn);
@@ -453,7 +459,7 @@ namespace CameraViewerDotnet
 
         private bool JobxCellEndEdit(object s, TableEndEditEventArgs e)
         {
-            var row = e.RowIndex;
+            var row = e.RowIndex - 1; // AntdUI 行索引为 1-based（0 是表头）
             if (row < 0 || row >= jobxRows.Count) return false;
             var r = jobxRows[row];
             var key = e.Column?.Key;
@@ -477,7 +483,7 @@ namespace CameraViewerDotnet
 
         private void JobxCheckedChanged(object s, TableCheckEventArgs e)
         {
-            var row = e.RowIndex;
+            var row = e.RowIndex - 1; // AntdUI 行索引为 1-based（0 是表头）
             if (row < 0 || row >= jobxRows.Count) return;
             var r = jobxRows[row];
             var key = e.Column?.Key;
@@ -489,9 +495,9 @@ namespace CameraViewerDotnet
 
         private void JobxCellButtonClick(object s, TableButtonEventArgs e)
         {
-            var row = e.RowIndex;
-            if (row < 0 || row >= jobxRows.Count) return;
-            var r = jobxRows[row];
+            // AntdUI 行索引为 1-based（0 是表头）；优先用 Record 匹配
+            var r = e.Record as JobxRow ?? (e.RowIndex >= 1 && e.RowIndex <= jobxRows.Count ? jobxRows[e.RowIndex - 1] : null);
+            if (r == null) return;
             var id = e.Btn?.Id;
             if (id == "select")
             {
