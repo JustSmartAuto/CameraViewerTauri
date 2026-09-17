@@ -214,6 +214,8 @@ namespace CameraViewerDotnet
             Height = 30,
             Margin = new Padding(4, 9, 0, 0),
             Type = TTypeMini.Default,
+            DefaultBorderColor = ThemeManager.BtnBorder,
+            BorderWidth = 1,
         };
 
         private void UpdateToolbarButtons()

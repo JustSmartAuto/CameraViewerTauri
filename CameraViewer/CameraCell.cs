@@ -118,15 +118,15 @@ namespace CameraViewerDotnet
             };
             topGrid.Controls.Add(remarkBox, 1, 0);
 
-            lockBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
+            lockBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             lockBtn.Click += (s, e) => ToggleLock();
             topGrid.Controls.Add(lockBtn, 2, 0);
 
-            refreshBtn = new AntdUI.Button { Text = I18n.T("refresh"), IconSvg = AntIcon.Svg(AntIcon.Reload), Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
+            refreshBtn = new AntdUI.Button { Text = I18n.T("refresh"), IconSvg = AntIcon.Svg(AntIcon.Reload), Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             refreshBtn.Click += async (s, e) => await ReloadAsync();
             topGrid.Controls.Add(refreshBtn, 3, 0);
 
-            maxBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0) };
+            maxBtn = new AntdUI.Button { Text = "", IconSvg = "", Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             maxBtn.Click += (s, e) =>
             {
                 isMaximized = !isMaximized;

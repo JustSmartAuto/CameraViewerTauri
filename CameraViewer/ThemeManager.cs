@@ -22,6 +22,7 @@ namespace CameraViewer
         public static Color FgDim { get; private set; }
         public static Color Accent { get; private set; }
         public static Color Border { get; private set; }
+        public static Color BtnBorder { get; private set; }
 
         public static TAMode TAMode => IsDark ? TAMode.Dark : TAMode.Light;
 
@@ -41,6 +42,7 @@ namespace CameraViewer
                 FgDim = Color.FromArgb(0x88, 0x88, 0x88);
                 Accent = Color.FromArgb(0x0E, 0x63, 0x9C);
                 Border = Color.FromArgb(0x3F, 0x3F, 0x46);
+                BtnBorder = Color.FromArgb(0x91, 0xCA, 0xFF);
             }
             else
             {
@@ -51,6 +53,7 @@ namespace CameraViewer
                 FgDim = Color.FromArgb(0x77, 0x77, 0x77);
                 Accent = Color.FromArgb(0x00, 0x78, 0xD4);
                 Border = Color.FromArgb(0xD0, 0xD0, 0xD0);
+                BtnBorder = Color.FromArgb(0x91, 0xCA, 0xFF);
             }
 
             ThemeChanged?.Invoke();

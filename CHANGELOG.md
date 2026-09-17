@@ -17,6 +17,7 @@
 - [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：每路格子改用 WinForms WebView2 控件 + AntdUI Input/Button；HMI 语言跟随注入逻辑（`hmi-i18n.js` 握手协议）原样保留。
 - [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：改为 `AntdUI.Window` + Tabs；JOBX 相机表格从 WPF DataGrid 改为 AntdUI Table（单元格编辑/勾选/按钮事件）；备份目录选择仍用 WinForms `FolderBrowserDialog`。
 - [CameraViewer/AboutWindow.cs](CameraViewer/AboutWindow.cs)：改为 `AntdUI.Window`。
+- **按钮浅蓝色描边**：所有 `TTypeMini.Default` 按钮（工具栏、相机格、JOBX 备份页）统一 `DefaultBorderColor=#91CAFF` + `BorderWidth=1`（AntdUI 2.4.10 无 `BorderColor` 属性，属性名为 `DefaultBorderColor`）；[ThemeManager.cs](CameraViewer/ThemeManager.cs) 新增 `BtnBorder` 调色板项。
 - **修复页面内容残缺**：AntdUI.Radio 默认 `AutoSizeMode=None` 导致 FlowLayoutPanel 测量高度为 0（显示设置/软件设置页单选按钮不显示）→ 显式 `AutoSizeMode=TAutoSize.Auto`；AntdUI.Label 长文本 AutoSize 测量不准导致关于页版本号/描述/技术栈截断 → 改用原生 WinForms `Label`（AutoSizing+MaximumSize 换行可靠）；JOBX 表格空数据时 `EmptyHeader=true` 显示列头；关于页版本号截断 commit 哈希（`InformationalVersion` 去除 `+` 后缀）。
 - [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：关于页技术栈文案更新为 "WinForms + AntdUI (.NET 8) + WebView2 + FluentFTP"。
 - [README.md](README.md)：技术栈描述 WPF/HandyControls → WinForms/AntdUI。

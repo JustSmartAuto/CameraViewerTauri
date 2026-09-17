@@ -300,7 +300,7 @@ namespace CameraViewerDotnet
 
             var btns = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
 
-            jobxAddBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("addCamera") };
+            jobxAddBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("addCamera"), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             jobxAddBtn.Click += (s, e) =>
             {
                 ConfigService.JobxBackup.cameras.Add(new JobxCameraConfig());
@@ -309,7 +309,7 @@ namespace CameraViewerDotnet
             };
             btns.Controls.Add(jobxAddBtn);
 
-            jobxBackupBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("backup"), Margin = new Padding(8, 0, 0, 0) };
+            jobxBackupBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("backup"), Margin = new Padding(8, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             jobxBackupBtn.Click += (s, e) =>
             {
                 var idx = jobxGrid?.SelectedIndex ?? -1;
@@ -322,11 +322,11 @@ namespace CameraViewerDotnet
             };
             btns.Controls.Add(jobxBackupBtn);
 
-            jobxBackupAllBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("backupAll"), Margin = new Padding(8, 0, 0, 0) };
+            jobxBackupAllBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("backupAll"), Margin = new Padding(8, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             jobxBackupAllBtn.Click += (s, e) => JobxBackupService.BackupAll();
             btns.Controls.Add(jobxBackupAllBtn);
 
-            jobxOpenDirBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("openDir"), Margin = new Padding(8, 0, 0, 0) };
+            jobxOpenDirBtn = new AntdUI.Button { Width = 92, Height = 30, Text = I18n.T("openDir"), Margin = new Padding(8, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             jobxOpenDirBtn.Click += (s, e) =>
             {
                 string dir = null;
