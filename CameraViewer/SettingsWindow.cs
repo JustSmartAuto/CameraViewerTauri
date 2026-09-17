@@ -377,13 +377,20 @@ namespace CameraViewerDotnet
             jobxOpenDirBtn.Text = I18n.T("openDir");
         }
 
-        private class JobxRow
+        // AntdUI.Table 数据绑定要求 public 类 + public 属性（字段/private 类读不到）
+        public class JobxRow
         {
-            public JobxCameraConfig src;
-            public string name, ip, port, username, password, backupDir;
-            public bool ftps, trust;
-            public CellButton select;
-            public CellButton delete;
+            public JobxCameraConfig src { get; set; }
+            public string name { get; set; }
+            public string ip { get; set; }
+            public string port { get; set; }
+            public string username { get; set; }
+            public string password { get; set; }
+            public string backupDir { get; set; }
+            public bool ftps { get; set; }
+            public bool trust { get; set; }
+            public CellButton select { get; set; }
+            public CellButton delete { get; set; }
 
             public void SyncFromSrc()
             {
