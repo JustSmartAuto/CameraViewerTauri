@@ -28,20 +28,13 @@ namespace CameraViewer
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            // 头部：图标 + 应用名
-            var header = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
-            var icon = new AntdUI.Label
-            {
-                Text = "",
-                PrefixSvg = AntIcon.Svg(AntIcon.InfoCircle),
-                Size = new Size(32, 32),
-                Margin = new Padding(0, 0, 10, 0),
-            };
-            header.Controls.Add(icon);
+            // 头部：应用名
+            var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, WrapContents = false };
             var title = new AntdUI.Label
             {
                 Text = I18n.T("appTitle"),
                 AutoSize = true,
+                Anchor = AnchorStyles.Left,
                 Font = new Font("Microsoft YaHei UI", 12f, FontStyle.Bold),
                 Margin = new Padding(0, 6, 0, 0),
             };
@@ -58,6 +51,8 @@ namespace CameraViewer
             var ver = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
                 ?.InformationalVersion ?? "1.0.0";
+            var plus = ver.IndexOf('+');
+            if (plus > 0) ver = ver[..plus]; // 去掉 SourceRevisionId 提交哈希
 
             var verLabel = MakeLine(I18n.T("version") + " " + ver);
             var descLabel = MakeLine(I18n.T("aboutDesc"), true);
@@ -126,12 +121,12 @@ namespace CameraViewer
             titleBar.Text = I18n.T("about");
         }
 
-        private static AntdUI.Label MakeLine(string text, bool wrap = false) => new AntdUI.Label
+        private static System.Windows.Forms.Label MakeLine(string text, bool wrap = false) => new System.Windows.Forms.Label
         {
             Text = text,
-            AutoSize = !wrap,
-            Dock = wrap ? DockStyle.Top : DockStyle.None,
-            MaximumSize = new Size(360, 0),
+            AutoSize = true,
+            MaximumSize = wrap ? new Size(360, 0) : Size.Empty,
+            ForeColor = ThemeManager.Fg,
             Margin = new Padding(0, 5, 0, 5),
         };
     }

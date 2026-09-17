@@ -236,9 +236,9 @@ namespace CameraViewerDotnet
             var themeLabel = MakeLabel(I18n.T("themeSetting"), true);
             panel.Controls.Add(themeLabel);
 
-            var dark = new AntdUI.Radio { Text = I18n.T("themeDark"), Checked = ThemeManager.Theme == "dark", Margin = new Padding(0, 8, 0, 4) };
+            var dark = new AntdUI.Radio { Text = I18n.T("themeDark"), Checked = ThemeManager.Theme == "dark", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 8, 0, 4) };
             dark.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("dark"); };
-            var light = new AntdUI.Radio { Text = I18n.T("themeLight"), Checked = ThemeManager.Theme != "dark", Margin = new Padding(0, 0, 0, 4) };
+            var light = new AntdUI.Radio { Text = I18n.T("themeLight"), Checked = ThemeManager.Theme != "dark", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 0, 0, 4) };
             light.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("light"); };
 
             panel.Controls.Add(dark);
@@ -266,9 +266,9 @@ namespace CameraViewerDotnet
             var langLabel = MakeLabel(I18n.T("languageSetting"), true);
             panel.Controls.Add(langLabel);
 
-            var zh = new AntdUI.Radio { Text = I18n.T("languageZh"), Checked = I18n.Language == "zh", Margin = new Padding(0, 8, 0, 4) };
+            var zh = new AntdUI.Radio { Text = I18n.T("languageZh"), Checked = I18n.Language == "zh", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 8, 0, 4) };
             zh.CheckedChanged += (s, e) => { if (e.Value) ApplyLanguageChoice("zh"); };
-            var en = new AntdUI.Radio { Text = I18n.T("languageEn"), Checked = I18n.Language == "en", Margin = new Padding(0, 0, 0, 4) };
+            var en = new AntdUI.Radio { Text = I18n.T("languageEn"), Checked = I18n.Language == "en", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 0, 0, 4) };
             en.CheckedChanged += (s, e) => { if (e.Value) ApplyLanguageChoice("en"); };
 
             panel.Controls.Add(zh);
@@ -431,6 +431,7 @@ namespace CameraViewerDotnet
                 Columns = columns,
                 DataSource = jobxRows,
                 Bordered = true,
+                EmptyHeader = true,
                 EditMode = TEditMode.DoubleClick,
                 RowHeight = 32,
             };
