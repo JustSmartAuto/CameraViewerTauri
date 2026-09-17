@@ -9,6 +9,7 @@
 
 ### 重构：UI 框架从 WPF(HandyControls) 迁移到 WinForms + AntdUI
 
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)、[CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)、[CameraViewer/AboutWindow.cs](CameraViewer/AboutWindow.cs)：修复标题栏缺失导致的元素重叠——AntdUI.Window 本身不绘制标题栏，需添加 `AntdUI.PageHeader` 作为标题栏（`ShowButton=true` 显示最小化/最大化/关闭按钮，`DragMove` 默认支持拖动窗口）；主窗口工具栏标题文字移入 PageHeader，功能按钮靠右停靠。
 - [CameraViewer/CameraViewer.csproj](CameraViewer/CameraViewer.csproj)：移除 `UseWPF` 与 `HandyControls 3.7.0`，新增 `AntdUI 2.4.10`；新增 `RemoveWebView2WpfReference` Target（移除 WebView2 包对 net5.0+ 无条件引用的 `Microsoft.Web.WebView2.Wpf.dll`，消除 MSB3277 WindowsBase 版本冲突警告）。
 - [CameraViewer/App.cs](CameraViewer/App.cs)：WPF Application 改为 WinForms `[STAThread] Main` 入口；保留三处全局异常处理（UI 线程 / 非UI线程 / 未观察 Task 异常）。
 - [CameraViewer/ThemeManager.cs](CameraViewer/ThemeManager.cs)：改为设置 `AntdUI.Config.Mode` + `System.Drawing.Color` 调色板（VS Code 配色不变），保留 `ThemeChanged` 事件。

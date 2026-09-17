@@ -18,7 +18,7 @@ namespace CameraViewerDotnet
         private readonly Panel maxHost;
         private readonly Panel toolbar;
         private readonly Panel status;
-        private readonly Label titleText;
+        private readonly AntdUI.PageHeader header;
         private readonly Label timeText;
         private readonly Label versionText;
         private readonly AntdUI.Button settingsBtn;
@@ -57,6 +57,17 @@ namespace CameraViewerDotnet
             MinimumSize = new Size(600, 400);
             Mode = ThemeManager.TAMode;
 
+            // 标题栏：AntdUI.Window 不自绘标题栏，需用 PageHeader 提供标题/拖动/最小化/最大化/关闭
+            header = new AntdUI.PageHeader
+            {
+                Dock = DockStyle.Top,
+                Height = 40,
+                Text = I18n.T("appTitle"),
+                ShowIcon = true,
+                ShowButton = true,
+                BackColor = ThemeManager.Bg2,
+            };
+
             // 工具栏
             toolbar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = ThemeManager.Bg2 };
             toolbar.Paint += (s, e) =>
@@ -64,29 +75,15 @@ namespace CameraViewerDotnet
                 using var pen = new Pen(ThemeManager.Border);
                 e.Graphics.DrawLine(pen, 0, toolbar.Height - 1, toolbar.Width - 1, toolbar.Height - 1);
             };
-            var tb = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent };
-            tb.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-            tb.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-            titleText = new Label
-            {
-                Text = I18n.T("appTitle"),
-                ForeColor = ThemeManager.Fg,
-                AutoSize = true,
-                Font = new Font("Microsoft YaHei UI", 10.5f, FontStyle.Bold),
-                Anchor = AnchorStyles.Left,
-                Margin = new Padding(4, 0, 4, 0),
-            };
-            tb.Controls.Add(titleText, 0, 0);
-
             var btns = new FlowLayoutPanel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Right,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
                 BackColor = Color.Transparent,
             };
-            tb.Controls.Add(btns, 1, 0);
 
             settingsBtn = MakeButton(92);
             settingsBtn.Click += (s, e) => new SettingsWindow().ShowDialog(this);
@@ -115,7 +112,7 @@ namespace CameraViewerDotnet
             aboutBtn.Click += (s, e) => new AboutWindow().ShowDialog(this);
             btns.Controls.Add(aboutBtn);
 
-            toolbar.Controls.Add(tb);
+            toolbar.Controls.Add(btns);
 
             // 中部：相机网格 + 最大化宿主
             center = new Panel { Dock = DockStyle.Fill, BackColor = ThemeManager.Bg };
@@ -155,10 +152,11 @@ namespace CameraViewerDotnet
             st.Controls.Add(versionText, 1, 0);
             status.Controls.Add(st);
 
-            // Dock 顺序：先加入的最后布局（Fill 需最先加入）
+            // Dock 顺序：后加入的先布局（header 最顶，toolbar 其下，status 底部，center 填充剩余）
             Controls.Add(center);
             Controls.Add(toolbar);
             Controls.Add(status);
+            Controls.Add(header);
 
             timer = new System.Windows.Forms.Timer { Interval = 1000 };
             timer.Tick += (s, e) => UpdateTime();
@@ -236,7 +234,7 @@ namespace CameraViewerDotnet
         private void OnLanguageChanged()
         {
             Text = I18n.T("appTitle");
-            titleText.Text = I18n.T("appTitle");
+            header.Text = I18n.T("appTitle");
             notifyIcon.Text = I18n.T("appTitle");
             UpdateToolbarButtons();
             UpdateTime();
@@ -245,12 +243,12 @@ namespace CameraViewerDotnet
         private void ApplyTheme()
         {
             Mode = ThemeManager.TAMode;
+            header.BackColor = ThemeManager.Bg2;
             toolbar.BackColor = ThemeManager.Bg2;
             status.BackColor = ThemeManager.Bg2;
             center.BackColor = ThemeManager.Bg;
             grid.BackColor = ThemeManager.Bg;
             maxHost.BackColor = ThemeManager.Bg;
-            titleText.ForeColor = ThemeManager.Fg;
             timeText.ForeColor = ThemeManager.FgDim;
             versionText.ForeColor = ThemeManager.FgDim;
             foreach (var c in cells) c.ApplyTheme();

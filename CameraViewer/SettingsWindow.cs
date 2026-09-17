@@ -11,6 +11,7 @@ namespace CameraViewerDotnet
     public class SettingsWindow : AntdUI.Window
     {
         private readonly AntdUI.Tabs tabs;
+        private readonly AntdUI.PageHeader titleBar;
         private readonly List<Action> langUpdaters = new List<Action>();
 
         private TableLayoutPanel jobxHost;
@@ -37,7 +38,22 @@ namespace CameraViewerDotnet
             tabs.Pages.Add(MakePage(I18n.T("displaySettings"), BuildThemePage()));
             tabs.Pages.Add(MakePage(I18n.T("appSettings"), BuildLanguagePage()));
             tabs.Pages.Add(MakePage(I18n.T("jobxBackup"), BuildJobxPage()));
+
+            // 标题栏：AntdUI.Window 不自绘标题栏，需用 PageHeader 提供标题/关闭按钮
+            titleBar = new AntdUI.PageHeader
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                Text = I18n.T("systemSettings"),
+                ShowButton = true,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = ThemeManager.Bg2,
+            };
+
+            // Dock 顺序：后加入的先布局（titleBar 占顶部，tabs 填充剩余）
             Controls.Add(tabs);
+            Controls.Add(titleBar);
 
             I18n.LanguageChanged += OnLanguageChanged;
             ThemeManager.ThemeChanged += ApplyTheme;
@@ -53,6 +69,7 @@ namespace CameraViewerDotnet
         private void OnLanguageChanged()
         {
             Text = I18n.T("systemSettings");
+            titleBar.Text = I18n.T("systemSettings");
             var names = new[] { I18n.T("cameraDisplay"), I18n.T("cameraSettings"), I18n.T("displaySettings"), I18n.T("appSettings"), I18n.T("jobxBackup") };
             for (int i = 0; i < tabs.Pages.Count && i < names.Length; i++)
                 tabs.Pages[i].Text = names[i];
@@ -63,6 +80,7 @@ namespace CameraViewerDotnet
         private void ApplyTheme()
         {
             Mode = ThemeManager.TAMode;
+            titleBar.BackColor = ThemeManager.Bg2;
             if (jobxLog != null)
             {
                 jobxLog.BackColor = ThemeManager.Bg3;

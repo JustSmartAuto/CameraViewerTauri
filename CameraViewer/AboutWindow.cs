@@ -10,6 +10,8 @@ namespace CameraViewer
 {
     public class AboutWindow : AntdUI.Window
     {
+        private readonly AntdUI.PageHeader titleBar;
+
         public AboutWindow()
         {
             Text = I18n.T("about");
@@ -97,7 +99,21 @@ namespace CameraViewer
             closeRow.Controls.Add(closeBtn);
             root.Controls.Add(closeRow, 0, 2);
 
+            // 标题栏：AntdUI.Window 不自绘标题栏，需用 PageHeader 提供标题/关闭按钮
+            titleBar = new AntdUI.PageHeader
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                Text = I18n.T("about"),
+                ShowButton = true,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = ThemeManager.Bg2,
+            };
+
+            // Dock 顺序：后加入的先布局（titleBar 占顶部，root 填充剩余）
             Controls.Add(root);
+            Controls.Add(titleBar);
 
             I18n.LanguageChanged += UpdateTexts;
             FormClosed += (s, e) => I18n.LanguageChanged -= UpdateTexts;
@@ -107,6 +123,7 @@ namespace CameraViewer
         private void UpdateTexts()
         {
             Text = I18n.T("about");
+            titleBar.Text = I18n.T("about");
         }
 
         private static AntdUI.Label MakeLine(string text, bool wrap = false) => new AntdUI.Label
