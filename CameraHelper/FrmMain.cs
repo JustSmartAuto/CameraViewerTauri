@@ -350,6 +350,8 @@ public class FrmMain : AntdUI.Window
 		lblTime.ForeColor = ThemeManager.Fg;
 		lblVersion.ForeColor = ThemeManager.FgDim;
 		btnTheme.Text = (ThemeManager.IsDark ? "亮色模式" : "深色模式");
+		// btnOnline 为红/绿色状态按钮，不添加浅蓝描边
+		ThemeManager.StyleButtons(this, btnOnline);
 	}
 
 	protected override void Dispose(bool disposing)

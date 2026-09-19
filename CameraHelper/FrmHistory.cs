@@ -70,6 +70,7 @@ public class FrmHistory : Form
 		panel1.BackColor = ThemeManager.Bg2;
 		splitContainer1.BackColor = ThemeManager.Bg2;
 		ThemeManager.StyleGrid(dgvFileNames);
+		ThemeManager.StyleButtons(this);
 	}
 
 	private void UpdateDgv(string[] fileNames)

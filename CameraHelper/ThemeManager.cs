@@ -8,6 +8,7 @@ namespace CameraHelper;
 /// <summary>
 /// 主题管理：AntdUI 黑白模式 + 原生控件配色（AntdUI 控件自动跟随 Config.Mode，
 /// 原生 Label/DataGridView/GroupBox 等通过 ThemeManager 调色板手动适配）。
+/// 浅色主题为马卡龙浅黄色配色，按钮统一浅蓝色描边（#91CAFF）。
 /// </summary>
 public static class ThemeManager
 {
@@ -30,6 +31,9 @@ public static class ThemeManager
 
 	public static Color Border { get; private set; }
 
+	/// <summary>按钮浅蓝色描边色（与参考项目一致：#91CAFF）。</summary>
+	public static Color BtnBorder { get; private set; }
+
 	public static TAMode TAMode => IsDark ? TAMode.Dark : TAMode.Light;
 
 	public static void Apply(string theme)
@@ -44,17 +48,55 @@ public static class ThemeManager
 			Fg = Color.FromArgb(0xCC, 0xCC, 0xCC);
 			FgDim = Color.FromArgb(0x88, 0x88, 0x88);
 			Border = Color.FromArgb(0x3F, 0x3F, 0x46);
+			BtnBorder = Color.FromArgb(0x91, 0xCA, 0xFF);
 		}
 		else
 		{
-			Bg = Color.FromArgb(0xF0, 0xF0, 0xF0);
-			Bg2 = Color.FromArgb(0xFF, 0xFF, 0xFF);
-			Bg3 = Color.FromArgb(0xF7, 0xF7, 0xF7);
-			Fg = Color.FromArgb(0x33, 0x33, 0x33);
-			FgDim = Color.FromArgb(0x77, 0x77, 0x77);
-			Border = Color.FromArgb(0xD0, 0xD0, 0xD0);
+			// 马卡龙浅黄色配色（低饱和奶黄系）
+			Bg = Color.FromArgb(0xFD, 0xF6, 0xD8);
+			Bg2 = Color.FromArgb(0xFF, 0xFB, 0xEA);
+			Bg3 = Color.FromArgb(0xF9, 0xED, 0xBE);
+			Fg = Color.FromArgb(0x4A, 0x3F, 0x1B);
+			FgDim = Color.FromArgb(0x94, 0x86, 0x5C);
+			Border = Color.FromArgb(0xE8, 0xDD, 0xA8);
+			BtnBorder = Color.FromArgb(0x91, 0xCA, 0xFF);
+			// 让 AntdUI 窗口（AntdUI.Window）背景与文字也使用马卡龙配色
+			Config.Theme().Light(Bg, Fg);
 		}
 		ThemeChanged?.Invoke();
+	}
+
+	/// <summary>
+	/// 单个 AntdUI 按钮浅蓝色描边（AntdUI 2.4.10 属性名为 DefaultBorderColor，配合 BorderWidth=1）。
+	/// </summary>
+	public static void StyleButton(AntdUI.Button btn)
+	{
+		if (btn == null)
+		{
+			return;
+		}
+		btn.DefaultBorderColor = BtnBorder;
+		btn.BorderWidth = 1f;
+	}
+
+	/// <summary>
+	/// 递归遍历控件树，为全部 AntdUI 按钮添加浅蓝描边；skip 中的按钮跳过（如红/绿色在线状态按钮）。
+	/// </summary>
+	public static void StyleButtons(Control root, params AntdUI.Button[] skip)
+	{
+		if (root == null)
+		{
+			return;
+		}
+		AntdUI.Button btn = root as AntdUI.Button;
+		if (btn != null && (skip == null || Array.IndexOf(skip, btn) < 0))
+		{
+			StyleButton(btn);
+		}
+		foreach (Control child in root.Controls)
+		{
+			StyleButtons(child, skip);
+		}
 	}
 
 	/// <summary>

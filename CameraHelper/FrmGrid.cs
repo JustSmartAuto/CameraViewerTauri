@@ -50,6 +50,7 @@ public class FrmGrid : Form
 		ForeColor = ThemeManager.Fg;
 		BackColor = ThemeManager.Bg3;
 		panel1.BackColor = ThemeManager.Bg2;
+		ThemeManager.StyleButtons(this);
 	}
 
 	private void FrmGrid_Load(object sender, EventArgs e)

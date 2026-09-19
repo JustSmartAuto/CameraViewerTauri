@@ -84,6 +84,7 @@ public class FrmViewSetting : Form
 		ForeColor = ThemeManager.Fg;
 		BackColor = ThemeManager.Bg3;
 		panel1.BackColor = ThemeManager.Bg2;
+		ThemeManager.StyleButtons(this);
 	}
 
 	public void Init(CameraViewConfig cfg)

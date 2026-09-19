@@ -40,6 +40,7 @@ public class FrmCamCount : Form
 		ForeColor = ThemeManager.Fg;
 		BackColor = ThemeManager.Bg3;
 		panel1.BackColor = ThemeManager.Bg3;
+		ThemeManager.StyleButtons(this);
 	}
 
 	private void btnOK_Click(object sender, EventArgs e)

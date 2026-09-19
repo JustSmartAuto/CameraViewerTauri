@@ -115,6 +115,10 @@ public class CameraView : UserControl
 		tableLayoutPanel1.BackColor = ThemeManager.Bg3;
 		btnLast.BackColor = ThemeManager.Bg3;
 		btnNext.BackColor = ThemeManager.Bg3;
+		btnLast.FlatAppearance.BorderColor = ThemeManager.BtnBorder;
+		btnNext.FlatAppearance.BorderColor = ThemeManager.BtnBorder;
+		btnLast.FlatAppearance.BorderSize = 1;
+		btnNext.FlatAppearance.BorderSize = 1;
 	}
 
 	public void SetConfig(CameraViewConfig config)

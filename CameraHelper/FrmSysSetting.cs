@@ -233,6 +233,7 @@ public class FrmSysSetting : Form
 		panel2.BackColor = ThemeManager.Bg3;
 		panel3.BackColor = ThemeManager.Bg3;
 		ThemeManager.StyleGrid(dgvCameras);
+		ThemeManager.StyleButtons(this);
 	}
 
 	private void FrmSysSetting_Load(object sender, EventArgs e)

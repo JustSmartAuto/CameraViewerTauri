@@ -40,6 +40,7 @@ public class FrmOperation : Form
 	{
 		ForeColor = ThemeManager.Fg;
 		BackColor = ThemeManager.Bg3;
+		ThemeManager.StyleButtons(this);
 	}
 
 	private void btnReset_Click(object sender, EventArgs e)
