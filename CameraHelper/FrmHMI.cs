@@ -17,6 +17,7 @@ public class FrmHMI : AntdUI.Window
 	public FrmHMI(InSightConfig cfg)
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		config = cfg;
 	}
 

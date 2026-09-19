@@ -437,12 +437,33 @@ public class CameraView : UserControl
 
 	private void btnGrid_Click(object sender, EventArgs e)
 	{
+		if (Camera == null)
+		{
+			ShowCameraNotConnected("无法打开电子表格");
+			return;
+		}
 		ProjectMgr.Inst.ShowFrmGrid(Camera.InSight);
 	}
 
 	private void btnWeb_Click(object sender, EventArgs e)
 	{
+		if (Camera == null)
+		{
+			ShowCameraNotConnected("无法打开相机网页");
+			return;
+		}
 		ProjectMgr.Inst.ShowFrmHMI(Camera.Config);
+	}
+
+	/// <summary>相机未连接时的友好提示（中英双语）。</summary>
+	private void ShowCameraNotConnected(string cnAction)
+	{
+		bool isChinese = ProjectMgr.Inst.SysConfig.Language == 0;
+		string msg = isChinese
+			? ("相机未连接或未配置，" + cnAction + "，请先在系统设置中配置相机并上线。")
+			: "Camera is not connected or not configured. Please configure the camera in System Settings and go online first.";
+		MessageBox.Show(this, msg, "CameraHelperJimJack",
+			MessageBoxButtons.OK, MessageBoxIcon.Information);
 	}
 
 	private void btnHistory_Click(object sender, EventArgs e)

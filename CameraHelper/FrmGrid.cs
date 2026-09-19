@@ -30,6 +30,7 @@ public class FrmGrid : Form
 	public FrmGrid(CvsInSight cam)
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		ThemeManager.ThemeChanged += ApplyTheme;
 		ApplyTheme();
 		bool isCh = ProjectMgr.Inst.SysConfig.Language == 0;

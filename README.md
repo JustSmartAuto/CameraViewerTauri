@@ -42,7 +42,7 @@ CameraHelper 是一款基于 **.NET Framework 4.8 / WinForms + AntdUI（x64）**
 ## 功能特性
 
 1. **多相机集中显示** — 最多 16 路视图，按视图数量自动排成 1/2/4/6/9/12/16 宫格，单击可放大为单视图。
-2. **AntdUI 现代界面** — 主窗体与各设置/对话框窗体采用 AntdUI 控件（PageHeader / Button / Select / Input / Tabs 等），支持深色/浅色主题一键切换并全局跟随。
+2. **AntdUI 现代界面** — 主窗体与各设置/对话框窗体采用 AntdUI 控件（PageHeader / Button / Select / Input / Tabs 等），浅色主题为柔和的**马卡龙浅黄色**配色，按钮统一**浅蓝色描边**（#91CAFF），支持深色/浅色主题一键切换并全局跟随。
 3. **检测结果显示** — 实时把 Cognex 图形（CvsCogShape）叠加绘制到相机原图上；支持 90°/180°/270° 旋转，且以特定字符（默认 `$`）开头的文字在旋转后仍保持水平显示。
 4. **结果判定与路由** — 从相机电子表格单元格读取 Result（`1`=OK，其余=NG）与 ShotKey（区分同一相机的多次拍照），按「相机序号 + 拍照标识」把记录路由到对应视图。
 5. **缩略图回看** — 每条记录保留缩略图（缓存上限可配，默认 20），绿/红边框区分 OK/NG，支持只看 OK / 只看 NG 过滤及前后翻页；另有独立的历史图片浏览窗口。
@@ -91,7 +91,7 @@ CameraHelper 是一款基于 **.NET Framework 4.8 / WinForms + AntdUI（x64）**
 
 - **动作队列**（`ActionQueueWorker`）：单后台线程消费 `ConcurrentQueue<IAction>`，支持 Start/Pause/Continue/Close，队列上限 1000，保证绘制/存图/搬移的串行一致性。
 - **ProjectMgr 单例**：持有系统配置、相机配置列表、相机实例列表、视图配置/视图列表、动作队列、清理器，以及各子窗体的单例管理。
-- **ThemeManager 主题管理**：静态类统一管理深/浅色主题；AntdUI 控件自动跟随 `Config.Mode`，原生控件（DataGridView/ToolStrip/GroupBox 等）通过调色板事件 `ThemeChanged` 手动配色；主题选择持久化在 `SysConfig.Theme`。
+- **ThemeManager 主题管理**：静态类统一管理深/浅色主题；AntdUI 控件自动跟随 `Config.Mode`（浅色另经 `Config.Theme().Light(back, fore)` 应用马卡龙黄色窗口底色），原生控件（DataGridView/ToolStrip/GroupBox 等）通过调色板事件 `ThemeChanged` 手动配色；浅色调色板为奶黄系（Bg `#FDF6D8`、Bg2 `#FFFBEA`、Bg3 `#F9EDBE`），全部 AntdUI 按钮与 CameraView 翻页按钮统一浅蓝描边（BtnBorder `#91CAFF`，BorderWidth=1；在线状态红绿按钮除外）；主题选择持久化在 `SysConfig.Theme`。
 - **1 秒定时器**（FrmMain）：刷新状态栏时间、处理置顶、调用 `CheckCameraConnection()` 断线重连、更新各视图信息。
 
 ## 核心数据流
@@ -240,7 +240,7 @@ dotnet build CameraHelper/CameraHelper.csproj -c Release
 ### 界面与主题
 
 - **`FrmMain`**：继承 `AntdUI.Window`，顶部 `PageHeader`（图标 + 标题），工具栏提供「上线/离线」「系统设置」「一键操作」「主题切换」「语言切换」，底部状态栏显示时间与版本；中部 `TableLayoutPanel` 承载宫格视图。
-- **`ThemeManager`**：`Apply(theme)` 切换 `AntdUI.Config.Mode` 并刷新原生控件调色板（Bg/Bg2/Bg3/Fg/FgDim/Border），广播 `ThemeChanged` 事件；各窗体订阅该事件实现全局主题跟随，`StyleGrid()` 统一美化原生 DataGridView。
+- **`ThemeManager`**：`Apply(theme)` 切换 `AntdUI.Config.Mode` 并刷新原生控件调色板（Bg/Bg2/Bg3/Fg/FgDim/Border/BtnBorder），广播 `ThemeChanged` 事件；浅色为马卡龙奶黄配色，`StyleButton`/`StyleButtons` 递归为全部 AntdUI 按钮设置浅蓝描边（`DefaultBorderColor=#91CAFF`、`BorderWidth=1`），`StyleGrid()` 统一美化原生 DataGridView。
 
 ### 文件归档与清理
 
@@ -373,7 +373,7 @@ The program is distributed as a **Launcher + main application**: the single file
 ## Features
 
 1. **Centralized multi-camera display** — up to 16 views, automatically arranged into a 1/2/4/6/9/12/16-cell grid according to the view count; click a cell to enlarge it to a single view.
-2. **Modern AntdUI interface** — the main window and all settings/dialog forms use AntdUI controls (PageHeader / Button / Select / Input / Tabs, etc.), with one-click dark/light theme switching applied globally.
+2. **Modern AntdUI interface** — the main window and all settings/dialog forms use AntdUI controls (PageHeader / Button / Select / Input / Tabs, etc.). The light theme uses a soft **macaron light-yellow** palette, and all buttons get a unified **light-blue border** (#91CAFF); one-click dark/light theme switching is applied globally.
 3. **Inspection result display** — Cognex graphics (CvsCogShape) are overlaid onto the original camera image in real time; supports 90°/180°/270° rotation, and text starting with a designated character (`$` by default) stays horizontal after rotation.
 4. **Result judgment and routing** — reads Result (`1` = OK, otherwise NG) and ShotKey (distinguishing multiple shots from the same camera) from camera spreadsheet cells, and routes each record to the corresponding view by "camera index + shot key".
 5. **Thumbnail review** — each record keeps a thumbnail (configurable cache limit, 20 by default), with green/red borders for OK/NG; supports OK-only / NG-only filtering and paging back and forth; a separate history image browser is also included.
@@ -428,7 +428,7 @@ Key design points:
 
 - **Action queue** (`ActionQueueWorker`): a single background thread consumes a `ConcurrentQueue<IAction>` with Start/Pause/Continue/Close support and a queue limit of 1,000, ensuring serial consistency of drawing/saving/moving.
 - **ProjectMgr singleton**: holds the system configuration, camera configuration list, camera instance list, view configuration/view list, action queue, cleaner, and singleton management of child forms.
-- **ThemeManager**: a static class that centrally manages dark/light themes; AntdUI controls automatically follow `Config.Mode`, while native controls (DataGridView/ToolStrip/GroupBox, etc.) are colored manually via the `ThemeChanged` palette event; the chosen theme is persisted in `SysConfig.Theme`.
+- **ThemeManager**: a static class that centrally manages dark/light themes; AntdUI controls automatically follow `Config.Mode` (in light mode, `Config.Theme().Light(back, fore)` additionally applies the macaron-yellow window background), while native controls (DataGridView/ToolStrip/GroupBox, etc.) are colored manually via the `ThemeChanged` palette event. The light palette is creamy yellow (Bg `#FDF6D8`, Bg2 `#FFFBEA`, Bg3 `#F9EDBE`); all AntdUI buttons and the CameraView paging buttons get a unified light-blue border (BtnBorder `#91CAFF`, BorderWidth=1; the red/green online-status button is excluded); the chosen theme is persisted in `SysConfig.Theme`.
 - **1-second timer** (FrmMain): refreshes the status-bar clock, handles always-on-top, calls `CheckCameraConnection()` for reconnection, and updates view information.
 
 ## Core Data Flow
@@ -580,7 +580,7 @@ On subsequent runs, the runtime checks pass immediately — no repeated installa
 ### UI and themes
 
 - **`FrmMain`**: inherits `AntdUI.Window`, with a top `PageHeader` (icon + title); the toolbar provides "Online/Offline", "System Settings", "One-Click Operations", "Theme Switch", and "Language Switch"; the bottom status bar shows the clock and version; a central `TableLayoutPanel` hosts the grid views.
-- **`ThemeManager`**: `Apply(theme)` switches `AntdUI.Config.Mode` and refreshes the native-control palette (Bg/Bg2/Bg3/Fg/FgDim/Border), broadcasting the `ThemeChanged` event; forms subscribe to it for global theme following, and `StyleGrid()` uniformly styles native DataGridViews.
+- **`ThemeManager`**: `Apply(theme)` switches `AntdUI.Config.Mode` and refreshes the native-control palette (Bg/Bg2/Bg3/Fg/FgDim/Border/BtnBorder), broadcasting the `ThemeChanged` event; light mode uses the macaron creamy-yellow palette, while `StyleButton`/`StyleButtons` recursively set the light-blue border on all AntdUI buttons (`DefaultBorderColor=#91CAFF`, `BorderWidth=1`) and `StyleGrid()` uniformly styles native DataGridViews.
 
 ### File archival and cleanup
 

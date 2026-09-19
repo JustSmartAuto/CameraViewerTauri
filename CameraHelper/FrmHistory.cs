@@ -35,6 +35,7 @@ public class FrmHistory : Form
 	public FrmHistory(string path)
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		ThemeManager.ThemeChanged += ApplyTheme;
 		ApplyTheme();
 		bool isChinese = ProjectMgr.Inst.SysConfig.Language == 0;

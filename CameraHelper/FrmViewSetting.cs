@@ -54,6 +54,7 @@ public class FrmViewSetting : Form
 	public FrmViewSetting()
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		ThemeManager.ThemeChanged += ApplyTheme;
 		ApplyTheme();
 		bool isCh = ProjectMgr.Inst.SysConfig.Language == 0;

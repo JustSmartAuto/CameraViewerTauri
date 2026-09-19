@@ -50,6 +50,7 @@ public class FrmMain : AntdUI.Window
 	public FrmMain()
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		ThemeManager.ThemeChanged += ApplyTheme;
 	}
 
@@ -247,7 +248,7 @@ public class FrmMain : AntdUI.Window
 		ProjectMgr.Inst.IsOnLine = isOnline;
 		bool isCh = ProjectMgr.Inst.SysConfig.Language == 0;
 		btnOnline.Text = ((!isCh) ? (ProjectMgr.Inst.IsOnLine ? "Online" : "Offline") : (ProjectMgr.Inst.IsOnLine ? "在线中" : "离线中"));
-		btnOnline.BackColor = (isOnline ? Color.Green : Color.Red);
+		btnOnline.Type = (isOnline ? AntdUI.TTypeMini.Success : AntdUI.TTypeMini.Error);
 		btnSystemSetting.Enabled = !isOnline;
 		btnOperation.Enabled = !isOnline;
 		if (!isOnline)
@@ -366,7 +367,6 @@ public class FrmMain : AntdUI.Window
 
 	private void InitializeComponent()
 	{
-		System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(CameraHelper.FrmMain));
 		this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
 		this.header = new AntdUI.PageHeader();
 		this.toolbar = new System.Windows.Forms.Panel();
@@ -408,8 +408,7 @@ public class FrmMain : AntdUI.Window
 		this.toolbar.Name = "toolbar";
 		this.toolbar.Size = new System.Drawing.Size(1083, 50);
 		this.toolbar.TabIndex = 3;
-		this.btnOnline.ForeColor = System.Drawing.Color.White;
-		this.btnOnline.BackColor = System.Drawing.Color.Red;
+		this.btnOnline.Type = AntdUI.TTypeMini.Error;
 		this.btnOnline.Location = new System.Drawing.Point(12, 8);
 		this.btnOnline.Name = "btnOnline";
 		this.btnOnline.Size = new System.Drawing.Size(96, 34);
@@ -471,7 +470,6 @@ public class FrmMain : AntdUI.Window
 		base.Controls.Add(this.statusPanel);
 		base.Controls.Add(this.header);
 		this.Font = new System.Drawing.Font("微软雅黑", 10.5f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 134);
-		base.Icon = (System.Drawing.Icon)resources.GetObject("$this.Icon");
 		base.Name = "FrmMain";
 		base.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
 		this.Text = "CameraHelperJimJack";

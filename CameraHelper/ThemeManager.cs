@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using AntdUI;
 
@@ -35,6 +36,46 @@ public static class ThemeManager
 	public static Color BtnBorder { get; private set; }
 
 	public static TAMode TAMode => IsDark ? TAMode.Dark : TAMode.Light;
+
+	private static Icon appIcon;
+
+	private static MemoryStream iconStream;
+
+	/// <summary>
+	/// 全部窗体统一的 Logo（来自内嵌的 assets/icon.ico，按系统小图标尺寸选取最佳帧）。
+	/// </summary>
+	public static Icon AppIcon
+	{
+		get
+		{
+			if (appIcon == null)
+			{
+				using (Stream source = typeof(ThemeManager).Assembly
+					.GetManifestResourceStream("appicon.ico"))
+				{
+					if (source == null)
+					{
+						throw new FileNotFoundException("内嵌 Logo 资源缺失：appicon.ico");
+					}
+					iconStream = new MemoryStream();
+					source.CopyTo(iconStream);
+				}
+				iconStream.Position = 0;
+				int size = SystemInformation.SmallIconSize.Width;
+				appIcon = new Icon(iconStream, size, size);
+			}
+			return appIcon;
+		}
+	}
+
+	/// <summary>为窗体应用统一 Logo（标题栏 / 任务栏 / PageHeader 图标）。</summary>
+	public static void ApplyIcon(Form form)
+	{
+		if (form != null)
+		{
+			form.Icon = AppIcon;
+		}
+	}
 
 	public static void Apply(string theme)
 	{

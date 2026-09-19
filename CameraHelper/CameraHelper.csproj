@@ -17,6 +17,12 @@
     <RootNamespace>CameraHelper</RootNamespace>
     <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
   </PropertyGroup>
+  <!-- 所有窗体统一使用 assets/icon.ico 作为窗口/任务栏 Logo -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\icon.ico">
+      <LogicalName>appicon.ico</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="AntdUI" Version="2.4.10" />
     <PackageReference Include="System.Resources.Extensions" Version="4.7.1" />

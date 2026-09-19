@@ -17,6 +17,13 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
+  <!-- 启动器进度窗体 Logo -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\icon.ico">
+      <LogicalName>appicon.ico</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- 内嵌 .NET 8 Windows Desktop 运行时安装包（工控机缺少运行时时静默安装） -->
   <ItemGroup>
     <EmbeddedResource Include="..\assets\windowsdesktop-runtime-8.0.29-win-x64.exe">

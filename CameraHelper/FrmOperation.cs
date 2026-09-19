@@ -26,6 +26,7 @@ public class FrmOperation : Form
 	public FrmOperation()
 	{
 		InitializeComponent();
+		ThemeManager.ApplyIcon(this);
 		ThemeManager.ThemeChanged += ApplyTheme;
 		ApplyTheme();
 		bool isCh = ProjectMgr.Inst.SysConfig.Language == 0;

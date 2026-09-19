@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace CameraHelper.Launcher;
@@ -15,6 +16,30 @@ public class LauncherForm : Form
 	public LauncherForm()
 	{
 		InitializeComponent();
+		LoadIcon();
+	}
+
+	/// <summary>进度窗体使用统一 Logo（内嵌 appicon.ico）。</summary>
+	private void LoadIcon()
+	{
+		try
+		{
+			using (Stream source = typeof(LauncherForm).Assembly
+				.GetManifestResourceStream("appicon.ico"))
+			{
+				if (source != null)
+				{
+					MemoryStream ms = new MemoryStream();
+					source.CopyTo(ms);
+					ms.Position = 0;
+					int size = SystemInformation.SmallIconSize.Width;
+					Icon = new Icon(ms, size, size);
+				}
+			}
+		}
+		catch
+		{
+		}
 	}
 
 	public void SetStep(string text)
