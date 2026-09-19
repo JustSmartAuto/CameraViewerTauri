@@ -1,0 +1,17 @@
+# 构建产物
+bin/
+obj/
+publish/
+dist/
+assets/*.exe
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# 日志
+*.log
+docs/kimi*.md

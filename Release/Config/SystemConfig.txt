@@ -1,0 +1,10 @@
+﻿{
+  "AlwaysTop": false,
+  "IsSelectScreen": false,
+  "ScreenIndex": 0,
+  "Language": 0,
+  "ViewCount": 2,
+  "ReviewMaxCount": 20,
+  "IsCloseFirewall": false,
+  "ProcessingName": "CameraHelper"
+}

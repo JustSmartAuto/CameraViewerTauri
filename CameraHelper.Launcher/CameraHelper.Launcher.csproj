@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>CameraHelper.Launcher</AssemblyName>
+    <RootNamespace>CameraHelper.Launcher</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Version>26.9.19.22</Version>
+    <Product>CameraHelperJimJack</Product>
+    <AssemblyTitle>CameraHelperJimJack 启动器</AssemblyTitle>
+    <Description>CameraHelperJimJack 启动器：解压内嵌主程序并启动</Description>
+    <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <!-- 内嵌 .NET 8 Windows Desktop 运行时安装包（工控机缺少运行时时静默安装） -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\windowsdesktop-runtime-8.0.29-win-x64.exe">
+      <LogicalName>DotNet8Runtime.exe</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 内嵌主程序及全部依赖（由 build-with-timestamp.sh 生成 publish/app 后再编译启动器） -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\publish\app\**\*.*">
+      <LogicalName>app\%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
