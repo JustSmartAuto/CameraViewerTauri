@@ -1,0 +1,121 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.autoweld'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+// 完全离线模式 - 只使用本地libs目录
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    // FlatLaf Look and Feel
+    implementation name: 'flatlaf-3.4.1'
+
+    // RSyntaxTextArea for script editor
+    implementation name: 'rsyntaxtextarea-3.3.4'
+
+    // MQTT Client
+    implementation name: 'org.eclipse.paho.client.mqttv3-1.2.5'
+
+    // LuaJ for optional Lua scripting
+    implementation name: 'luaj-jse-3.0.1'
+
+    // QuickJS for JavaScript scripting
+    implementation name: 'cn.net.zhijian.quickjs-0.2.2'
+
+    // JSON processing
+    implementation name: 'gson-2.10.1'
+
+    // Base64 image handling
+    implementation name: 'jaxb-api-2.3.1'
+}
+
+// 处理字体资源、图标和标定板图像
+processResources {
+    from('fonts') {
+        into 'fonts'
+    }
+    // 包含图标文件
+    from('green_windows.jpg') {
+        into '.'
+    }
+    // 包含标定板图像
+    from('imgs') {
+        into 'imgs'
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+            'Main-Class': 'com.autoweld.cameraviewer.App',
+            'Implementation-Title': 'Camera Viewer AutoWeld',
+            'Implementation-Version': version
+        )
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    // 包含字体文件到jar中
+    from('fonts') {
+        into 'fonts'
+    }
+    // 包含图标文件到jar中
+    from('green_windows.jpg') {
+        into '.'
+    }
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// 获取当前时间戳（格式：yymmddHHMM）
+def getTimestamp() {
+    def sdf = new java.text.SimpleDateFormat("yyMMddHHmm")
+    return sdf.format(new Date())
+}
+
+task fatJar(type: Jar) {
+    manifest {
+        attributes(
+            'Main-Class': 'com.autoweld.cameraviewer.App',
+            'Implementation-Title': 'Camera Viewer AutoWeld',
+            'Implementation-Version': version
+        )
+    }
+    archiveClassifier = 'fat'
+    archiveFileName = "camera-viewer-${version}-fat_${getTimestamp()}.jar"
+    destinationDirectory = file('.')
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    // 包含字体文件到fat jar中
+    from('fonts') {
+        into 'fonts'
+    }
+    // 包含图标文件到fat jar中
+    from('green_windows.jpg') {
+        into '.'
+    }
+    // 包含标定板图像到fat jar中
+    from('imgs') {
+        into 'imgs'
+    }
+
+    with jar
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+build.dependsOn fatJar

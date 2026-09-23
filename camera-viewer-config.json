@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "maximizeOnStartup": true,
+  "showCheckerboardWhenNoImage": true,
+  "grids": [
+    {
+      "name": "画面 1",
+      "enabled": true,
+      "brokerHost": "127.0.0.1",
+      "brokerPort": 8907,
+      "clientId": "",
+      "imageTopic": "/autoweld/measure/image/raw",
+      "dataTopic": "/autoweld/measure/data/raw",
+      "logTopic": "/autoweld/measure/logs/raw",
+      "script": "function process(message) {\n    if (message.productWidth \u003d\u003d\u003d undefined) {\n        return\n    }\n\n    if (message.surfaceNumber !\u003d 1){\n\t\treturn;\n    }\n    \n    // 使用 test1.jpg 的实际尺寸 9344x7000 作为绘图坐标系\n    var imgW \u003d 9344;\n    var imgH \u003d 7000;\n\n    // 绘制宽度测量线（红色）\n    PlotLine(imgW, imgH,\n        message.leftPointX, message.leftPointY,\n        message.rightPointX, message.rightPointY,\n        8, 0xFF0000)\n\n    // 绘制高度参考线（蓝色）\n    PlotLine(imgW, imgH,\n        message.topPointX, message.topPointY,\n        message.topPointX, message.baseLineLeftPointY,\n        8, 0x0000FF)\n\n    // 绘制测量点（黄色）\n    PlotPoint(imgW, imgH, message.leftPointX, message.leftPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.rightPointX, message.rightPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.topPointX, message.topPointY, 30, 0xFFFF00)\n\n    // 左上角信息面板背景框（青色边框）\n    // PlotPolygon(imgW, imgH,\n    //    [80, 80, 2200, 80, 2200, 900, 80, 900],\n    //    6, 0x00FFFF)\n\n    // 配方号、面号\n    PlotString(imgW, imgH, 140, 300,\n        \"配方号: \" + message.productNumber + \"    面号: \" + message.surfaceNumber,\n        300, 0x0000FF)\n\n    // 对称度、高度、宽度\n    PlotString(imgW, imgH, 140, 600,\n        \"对称度: \" + message.symmetry.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 900,\n        \"高度: \" + message.productHeight.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 1200,\n        \"宽度: \" + message.productWidth.toFixed(2),\n        300, 0x0000FF)\n\n    // 时间\n    PlotString(imgW, imgH, 140, 1500,\n        \"时间: \" + message.timestamp,\n        300, 0x0000FF)\n\n    // 保存渲染图\n    SaveRenderedImage(\"D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraViewerAutoWeld\\面1渲染图.jpg\");\n}",
+      "showImage": true,
+      "showData": false,
+      "showLog": false,
+      "showDrawings": true
+    },
+    {
+      "name": "画面 2",
+      "enabled": true,
+      "brokerHost": "127.0.0.1",
+      "brokerPort": 8907,
+      "clientId": "",
+      "imageTopic": "/autoweld/measure/image/raw",
+      "dataTopic": "/autoweld/measure/data/raw",
+      "logTopic": "/autoweld/measure/logs/raw",
+      "script": "function process(message) {\n    if (message.productWidth \u003d\u003d\u003d undefined) {\n        return\n    }\n\n    if (message.surfaceNumber !\u003d 2){\n\t\treturn;\n    }\n    \n    // 使用 test1.jpg 的实际尺寸 9344x7000 作为绘图坐标系\n    var imgW \u003d 9344;\n    var imgH \u003d 7000;\n\n    // 绘制宽度测量线（红色）\n    PlotLine(imgW, imgH,\n        message.leftPointX, message.leftPointY,\n        message.rightPointX, message.rightPointY,\n        8, 0xFF0000)\n\n    // 绘制高度参考线（蓝色）\n    PlotLine(imgW, imgH,\n        message.topPointX, message.topPointY,\n        message.topPointX, message.baseLineLeftPointY,\n        8, 0x0000FF)\n\n    // 绘制测量点（黄色）\n    PlotPoint(imgW, imgH, message.leftPointX, message.leftPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.rightPointX, message.rightPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.topPointX, message.topPointY, 30, 0xFFFF00)\n\n    // 左上角信息面板背景框（青色边框）\n    // PlotPolygon(imgW, imgH,\n    //    [80, 80, 2200, 80, 2200, 900, 80, 900],\n    //    6, 0x00FFFF)\n\n    // 配方号、面号\n    PlotString(imgW, imgH, 140, 300,\n        \"配方号: \" + message.productNumber + \"    面号: \" + message.surfaceNumber,\n        300, 0x0000FF)\n\n    // 对称度、高度、宽度\n    PlotString(imgW, imgH, 140, 600,\n        \"对称度: \" + message.symmetry.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 900,\n        \"高度: \" + message.productHeight.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 1200,\n        \"宽度: \" + message.productWidth.toFixed(2),\n        300, 0x0000FF)\n\n    // 时间\n    PlotString(imgW, imgH, 140, 1500,\n        \"时间: \" + message.timestamp,\n        300, 0x0000FF)\n}",
+      "showImage": true,
+      "showData": false,
+      "showLog": false,
+      "showDrawings": true
+    },
+    {
+      "name": "画面 3",
+      "enabled": true,
+      "brokerHost": "127.0.0.1",
+      "brokerPort": 8907,
+      "clientId": "",
+      "imageTopic": "/autoweld/measure/image/raw",
+      "dataTopic": "/autoweld/measure/data/raw",
+      "logTopic": "/autoweld/measure/logs/raw",
+      "script": "function process(message) {\n    if (message.productWidth \u003d\u003d\u003d undefined) {\n        return\n    }\n\n    if (message.surfaceNumber !\u003d 3){\n\t\treturn;\n    }\n    \n    // 使用 test1.jpg 的实际尺寸 9344x7000 作为绘图坐标系\n    var imgW \u003d 9344;\n    var imgH \u003d 7000;\n\n    // 绘制宽度测量线（红色）\n    PlotLine(imgW, imgH,\n        message.leftPointX, message.leftPointY,\n        message.rightPointX, message.rightPointY,\n        8, 0xFF0000)\n\n    // 绘制高度参考线（蓝色）\n    PlotLine(imgW, imgH,\n        message.topPointX, message.topPointY,\n        message.topPointX, message.baseLineLeftPointY,\n        8, 0x0000FF)\n\n    // 绘制测量点（黄色）\n    PlotPoint(imgW, imgH, message.leftPointX, message.leftPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.rightPointX, message.rightPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.topPointX, message.topPointY, 30, 0xFFFF00)\n\n    // 左上角信息面板背景框（青色边框）\n    // PlotPolygon(imgW, imgH,\n    //    [80, 80, 2200, 80, 2200, 900, 80, 900],\n    //    6, 0x00FFFF)\n\n    // 配方号、面号\n    PlotString(imgW, imgH, 140, 300,\n        \"配方号: \" + message.productNumber + \"    面号: \" + message.surfaceNumber,\n        300, 0x0000FF)\n\n    // 对称度、高度、宽度\n    PlotString(imgW, imgH, 140, 600,\n        \"对称度: \" + message.symmetry.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 900,\n        \"高度: \" + message.productHeight.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 1200,\n        \"宽度: \" + message.productWidth.toFixed(2),\n        300, 0x0000FF)\n\n    // 时间\n    PlotString(imgW, imgH, 140, 1500,\n        \"时间: \" + message.timestamp,\n        300, 0x0000FF)\n}",
+      "showImage": true,
+      "showData": false,
+      "showLog": false,
+      "showDrawings": true
+    },
+    {
+      "name": "画面 4",
+      "enabled": true,
+      "brokerHost": "127.0.0.1",
+      "brokerPort": 8907,
+      "clientId": "",
+      "imageTopic": "/autoweld/measure/image/raw",
+      "dataTopic": "/autoweld/measure/data/raw",
+      "logTopic": "/autoweld/measure/logs/raw",
+      "script": "function process(message) {\n    if (message.productWidth \u003d\u003d\u003d undefined) {\n        return\n    }\n\n    if (message.surfaceNumber !\u003d 4){\n\t\treturn;\n    }\n    \n    // 使用 test1.jpg 的实际尺寸 9344x7000 作为绘图坐标系\n    var imgW \u003d 9344;\n    var imgH \u003d 7000;\n\n    // 绘制宽度测量线（红色）\n    PlotLine(imgW, imgH,\n        message.leftPointX, message.leftPointY,\n        message.rightPointX, message.rightPointY,\n        8, 0xFF0000)\n\n    // 绘制高度参考线（蓝色）\n    PlotLine(imgW, imgH,\n        message.topPointX, message.topPointY,\n        message.topPointX, message.baseLineLeftPointY,\n        8, 0x0000FF)\n\n    // 绘制测量点（黄色）\n    PlotPoint(imgW, imgH, message.leftPointX, message.leftPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.rightPointX, message.rightPointY, 30, 0xFFFF00)\n    PlotPoint(imgW, imgH, message.topPointX, message.topPointY, 30, 0xFFFF00)\n\n    // 左上角信息面板背景框（青色边框）\n    // PlotPolygon(imgW, imgH,\n    //    [80, 80, 2200, 80, 2200, 900, 80, 900],\n    //    6, 0x00FFFF)\n\n    // 配方号、面号\n    PlotString(imgW, imgH, 140, 300,\n        \"配方号: \" + message.productNumber + \"    面号: \" + message.surfaceNumber,\n        300, 0x0000FF)\n\n    // 对称度、高度、宽度\n    PlotString(imgW, imgH, 140, 600,\n        \"对称度: \" + message.symmetry.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 900,\n        \"高度: \" + message.productHeight.toFixed(4),\n        300, 0x0000FF)\n\n    PlotString(imgW, imgH, 140, 1200,\n        \"宽度: \" + message.productWidth.toFixed(2),\n        300, 0x0000FF)\n\n    // 时间\n    PlotString(imgW, imgH, 140, 1500,\n        \"时间: \" + message.timestamp,\n        300, 0x0000FF)\n}",
+      "showImage": true,
+      "showData": false,
+      "showLog": false,
+      "showDrawings": true
+    }
+  ]
+}
