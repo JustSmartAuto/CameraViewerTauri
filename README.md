@@ -1,36 +1,37 @@
-# CameraViewerDotnet
+# CameraViewerGigE
 
-基于 .NET 8 的 WinForms 工业相机 HMI 网页查看器（复刻 CameraViewerTauri 核心功能），搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序），不易被杀毒软件误删 DLL 导致无法启动。
+基于 .NET 8 的 WinForms 工业相机查看器（复刻 CameraViewerTauri 核心功能），支持 WebView2 加载相机 HMI 网页与 OPT GigE 相机实时取流（SciCamera SDK），搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序 + SciCamera SDK），不易被杀毒软件误删 DLL 导致无法启动。
 
 ## 截图
 
-![CameraViewerDotnet 主界面](assets/screenshot1.png)
+![CameraViewerGigE 主界面](assets/screenshot1.png)
 
-主界面：多路相机网格布局，每路格子内嵌 WebView2 加载工业相机 HMI 网页，支持 URL/备注编辑、锁定、刷新、最大化；顶部工具栏含设置、主题切换、语言切换、关于按钮；底部状态栏显示系统时间与版本号。
+主界面：多路相机网格布局，每路格子内嵌 WebView2 加载工业相机 HMI 网页（HTTP 模式）或内嵌 `PictureBox` 显示 GigE 相机实时画面，支持地址/备注编辑、锁定、刷新、最大化；顶部工具栏含设置、主题切换、语言切换、关于按钮；底部状态栏显示系统时间与版本号。
 
 ## 功能
 
-- 1–16 路相机网格布局（1/2/4/6/9/16），WebView2 内嵌加载工业相机（康耐视 In-Sight 等）HTTP HMI 网页，URL 自动补 `http://` 前缀
+- 1–16 路相机网格布局（1/2/4/6/9/11/12/16），每路可选连接方式：**HTTP**（WebView2 内嵌加载工业相机康耐视 In-Sight 等 HMI 网页，URL 自动补 `http://` 前缀）或 **GigE**（调用 OPT SciCamera SDK 实时取流并在格子里显示画面）
 - 错峰加载：第 i 路相机延时 i×N 秒（默认 10s，可配 0=立即）再加载，避免多路同时打开造成网络风暴
-- 每路格子：URL / 备注编辑（失焦或回车即保存）、锁定（锁定后只读）、刷新、最大化/还原
-- 设置窗口：相机显示（数量、错峰延时）、相机设置（每路 URL/备注/锁定）、显示设置（明亮/暗黑主题）、软件设置（中文/English）
+- 每路格子：地址/备注编辑（失焦或回车即保存；HTTP 为 URL，GigE 为序列号）、锁定（锁定后只读）、刷新、最大化/还原
+- 设置窗口：相机显示（数量、错峰延时）、相机设置（每路 连接方式 / URL 或 IP-URI / 序列号 / 曝光时间(ms) / 备注 / 锁定）、显示设置（明亮/暗黑主题）、软件设置（中文/English）
+- **GigE 实时取流**：按序列号发现并匹配 OPT GigE 相机 → 打开设备 → 关闭触发 → 设置曝光（ms，0=不改）→ 回调取帧 → 彩色转 RGB8 / 黑白转 Mono8 → 格子内 `PictureBox` 显示（约 10fps 限频），失败时格子内显示原因
 - **JOBX 作业备份**：设置窗口「JOBX备份」标签页，配置 FTP 相机（名称/IP/端口/用户名/密码/备份目录），一键或全部备份；FTP/FTPS（默认启用，FTPS 才能正常备份 .jobx 文件）+ 信任自签证书；递归下载 `.jobx`/`.jobx.sig`；环形日志实时显示；备份目录支持点击「选择」按钮浏览（`FolderBrowserDialog`）
 - **HMI 语言跟随**：WebView2 注入 `hmi-i18n.js`（`AddScriptToExecuteOnDocumentCreatedAsync`），在 `/pages/hmi/` 页面做整串文本替换中文化，语言跟随软件界面实时切换（`chrome.webview` 消息协议：子→宿主 `ready` 握手，宿主→子 `lang` 下发）
 - **关于页面**：工具栏「关于」按钮，显示应用名/版本号（读取程序集 `InformationalVersion`）/功能描述/技术栈/GitHub 仓库链接
 - URL/备注输入框水印提示（空内容时显示占位文本，语言切换同步刷新）
 - 关闭按钮最小化到系统托盘（右键 显示界面/退出）
 - 状态栏显示系统时间与版本号
-- 配置 JSON 持久化，exe 旁放置 `portable.txt` 即启用便携模式（配置存 exe 旁 `Configs\`），否则存 `%LOCALAPPDATA%\CameraViewerDotnet\`
+- 配置 JSON 持久化，**存放在 exe 同目录**（`CameraConfig.json` / `AppConfig.json` / `JobxBackupConfig.json`），随程序一起拷贝即可；首次运行会生成默认的 11 台 OPT GigE 相机配置
 
 ## 技术栈
 
 | 部分 | 技术 |
 |---|---|
-| 主程序 `CameraViewer/` | .NET 8 WinForms，**纯 C# 实现（无 XAML）**，AntdUI 2.4.10（Ant Design 风格控件/无边框窗口/明暗主题），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS） |
-| 启动器 `CameraViewer.Launcher/` | .NET Framework 4.8（Win10 内置 .NET 4 即可运行），内嵌运行时安装包与主程序 exe 资源 |
+| 主程序 `CameraViewer/` | .NET 8 WinForms，**纯 C# 实现（无 XAML）**，AntdUI 2.4.10（Ant Design 风格控件/无边框窗口/明暗主题），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS），OPT **SciCamera SDK**（`opt-camera-sdk/SciCamera.Net.dll` 托管程序集 + 原生 `Runtime/Win64_x64`，GigE 取流） |
+| 启动器 `CameraViewer.Launcher/` | .NET Framework 4.8（Win10 内置 .NET 4 即可运行），内嵌运行时安装包、主程序 exe 与 SciCamera SDK 资源 |
 | UI 风格 | AntdUI 控件 + VS Code 配色：暗黑 `#1e1e1e/#252526/#0e639c`，明亮 `#f0f0f0/#0078d4` |
 
-启动器工作流程：检测 `Microsoft.WindowsDesktop.App 8.x`（`dotnet --list-runtimes`，PATH 与 `C:\Program Files\dotnet` 双路探测）→ 缺失则静默安装内嵌的 windowsdesktop-runtime-8.0.29 → 每次覆盖释放主程序到 `%LOCALAPPDATA%\CameraViewerDotnet\App\` 并启动。
+启动器工作流程：检测 `Microsoft.WindowsDesktop.App 8.x`（`dotnet --list-runtimes`，PATH 与 `C:\Program Files\dotnet` 双路探测）→ 缺失则静默安装内嵌的 windowsdesktop-runtime-8.0.29 → 每次覆盖释放主程序到 `%LOCALAPPDATA%\CameraViewerGigE\App\`（含 `SciCameraSDK\Runtime\Win64_x64\` 原生库目录）并启动。
 
 ## 构建
 
@@ -40,9 +41,35 @@
 bash build-with-timestamp.sh
 ```
 
-产物：`dist/CameraViewerDotnet_<yyyyMMddHHmm>.exe`（约 60MB 单文件，直接拷贝到工控机运行）。
+产物：`dist/CameraViewerGigE_<yyyyMMddHHmm>.exe`（约 60MB 单文件，直接拷贝到工控机运行）。
 
 ## 部署注意事项
 
 - 主程序显示相机网页依赖 **WebView2 运行时**；部分精简版 Win10 工控机可能缺失，首次运行需联网下载，或另行部署 WebView2 离线包(CognexVisionSuit会一起安装)
 - 启动器内嵌 .NET 8 运行时安装包，工控机完全离线也能完成运行时安装
+- GigE 模式依赖启动器释放的 `SciCameraSDK\Runtime\Win64_x64\` 原生库（`SciCamSDK.dll` 等）；程序启动时会将该目录加入 DLL 搜索路径。若直接运行 `publish/app` 的单文件 exe，则会从 exe 目录逐级向上查找 `opt-camera-sdk\Runtime\Win64_x64`
+- 相机配置 `CameraConfig.json` 位于 exe 同目录，首次运行自动生成 11 台 OPT GigE 相机（序列号取自 `相机序列号.xlsx`）
+
+## 配置说明
+
+配置文件全部位于 **exe 同目录**，直接拷贝整个目录即可迁移：
+
+| 文件 | 说明 |
+|---|---|
+| `CameraConfig.json` | 相机列表、数量、错峰延时 |
+| `AppConfig.json` | 界面语言、主题 |
+| `JobxBackupConfig.json` | JOBX 备份的 FTP 相机列表 |
+
+`CameraConfig.json` 中每台相机（`items[]`）的字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | int | 相机序号（0-based） |
+| `conn` | string | 连接方式：`http`（WebView2 加载 HMI 网页）或 `gige`（OPT SciCamera SDK 实时取流），默认 `http` |
+| `ip` | string | HTTP：网页地址；GigE：IP 地址/URI（可留空，按序列号匹配） |
+| `serial` | string | GigE 相机序列号（仅 GigE 模式生效） |
+| `exposureMs` | int | GigE 曝光时间（毫秒），`0` 表示不修改相机默认值 |
+| `remark` | string | 备注/工位名 |
+| `locked` | bool | 锁定后地址/序列号/备注只读 |
+
+> 相机数量支持 `1 / 2 / 4 / 6 / 9 / 11 / 12 / 16`。切换连接方式（HTTP↔GigE）会自动重建该路格子。
