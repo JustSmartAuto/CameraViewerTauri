@@ -379,7 +379,10 @@ public class MainWindow : Window
     private ControlTemplate TopLevelTemplate()
     {
         var t = new ControlTemplate(typeof(MenuItem));
+        var root = new FrameworkElementFactory(typeof(Grid), "root");
         var bd = new FrameworkElementFactory(typeof(Border), "Bd");
+        bd.SetBinding(Border.BackgroundProperty,
+            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
         bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
         bd.SetValue(Border.SnapsToDevicePixelsProperty, true);
         var cp = new FrameworkElementFactory(typeof(ContentPresenter));
@@ -402,8 +405,9 @@ public class MainWindow : Window
         sv.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
         pb.AppendChild(sv);
         popup.AppendChild(pb);
-        bd.AppendChild(popup);
-        t.VisualTree = bd;
+        root.AppendChild(bd);
+        root.AppendChild(popup);
+        t.VisualTree = root;
         AddHoverTrigger(t);
         return t;
     }
@@ -413,10 +417,11 @@ public class MainWindow : Window
         var t = new ControlTemplate(typeof(MenuItem));
         var bd = new FrameworkElementFactory(typeof(Grid), "root");
         bd.SetValue(Grid.MarginProperty, new Thickness(2));
-        var tb = new FrameworkElementFactory(typeof(Border));
-        tb.Name = "Bd";
-        tb.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        var tb = new FrameworkElementFactory(typeof(Border), "Bd");
+        tb.SetBinding(Border.BackgroundProperty,
+            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
         tb.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
+        var inner = new FrameworkElementFactory(typeof(Grid));
         var cp = new FrameworkElementFactory(typeof(ContentPresenter));
         cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
         cp.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
@@ -425,10 +430,11 @@ public class MainWindow : Window
         arr.SetValue(TextBlock.TextProperty, "▶");
         arr.SetValue(TextBlock.ForegroundProperty, GestureText);
         arr.SetValue(TextBlock.FontSizeProperty, 9.0);
+        arr.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         arr.SetValue(Grid.ColumnProperty, 2);
-        tb.AppendChild(cp);
-        tb.AppendChild(arr);
-        bd.AppendChild(tb);
+        inner.AppendChild(cp);
+        inner.AppendChild(arr);
+        tb.AppendChild(inner);
         var popup = new FrameworkElementFactory(typeof(Popup), "PART_Popup");
         popup.SetValue(Popup.PlacementProperty, PlacementMode.Right);
         popup.SetValue(Popup.AllowsTransparencyProperty, true);
@@ -447,7 +453,7 @@ public class MainWindow : Window
         popup.AppendChild(pb);
         bd.AppendChild(popup);
         t.VisualTree = bd;
-        AddHoverTrigger(t, "Bd");
+        AddHoverTrigger(t);
         return t;
     }
 
@@ -455,7 +461,8 @@ public class MainWindow : Window
     {
         var t = new ControlTemplate(typeof(MenuItem));
         var bd = new FrameworkElementFactory(typeof(Border), "Bd");
-        bd.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        bd.SetBinding(Border.BackgroundProperty,
+            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
         bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
         bd.SetValue(Border.MarginProperty, new Thickness(2, 0, 2, 0));
         var cp = new FrameworkElementFactory(typeof(ContentPresenter));
@@ -466,9 +473,12 @@ public class MainWindow : Window
         gest.SetBinding(TextBlock.TextProperty, new Binding("Tag") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
         gest.SetValue(TextBlock.ForegroundProperty, GestureText);
         gest.SetValue(TextBlock.FontSizeProperty, 12.0);
+        gest.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         gest.SetValue(Grid.ColumnProperty, 2);
-        bd.AppendChild(cp);
-        bd.AppendChild(gest);
+        var inner = new FrameworkElementFactory(typeof(Grid));
+        inner.AppendChild(cp);
+        inner.AppendChild(gest);
+        bd.AppendChild(inner);
         t.VisualTree = bd;
         AddHoverTrigger(t);
         return t;
@@ -478,7 +488,8 @@ public class MainWindow : Window
     {
         var t = new ControlTemplate(typeof(MenuItem));
         var bd = new FrameworkElementFactory(typeof(Border), "Bd");
-        bd.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        bd.SetBinding(Border.BackgroundProperty,
+            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
         bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
         bd.SetValue(Border.MarginProperty, new Thickness(2, 0, 2, 0));
         var cp = new FrameworkElementFactory(typeof(ContentPresenter));
@@ -493,23 +504,28 @@ public class MainWindow : Window
         var tick = new FrameworkElementFactory(typeof(TextBlock), "tick");
         tick.SetValue(TextBlock.TextProperty, "✓");
         tick.SetValue(TextBlock.ForegroundProperty, ThumbHighlight);
+        tick.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         tick.SetValue(Grid.ColumnProperty, 1);
-        tick.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed);
-        bd.AppendChild(cp);
-        bd.AppendChild(tick);
-        bd.AppendChild(gest);
+        tick.SetBinding(UIElement.VisibilityProperty,
+            new Binding("IsChecked")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
+                Converter = new System.Windows.Controls.BooleanToVisibilityConverter()
+            });
+        var inner = new FrameworkElementFactory(typeof(Grid));
+        inner.AppendChild(cp);
+        inner.AppendChild(tick);
+        inner.AppendChild(gest);
+        bd.AppendChild(inner);
         t.VisualTree = bd;
         AddHoverTrigger(t);
-        var chk = new Trigger { Property = MenuItem.IsCheckedProperty, Value = true };
-        chk.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "tick"));
-        t.Triggers.Add(chk);
         return t;
     }
 
-    private static void AddHoverTrigger(ControlTemplate t, string target = "Bd")
+    private static void AddHoverTrigger(ControlTemplate t)
     {
         var hl = new Trigger { Property = MenuItem.IsHighlightedProperty, Value = true };
-        hl.Setters.Add(new Setter(Border.BackgroundProperty, HoverAccent, target));
+        hl.Setters.Add(new Setter(Control.BackgroundProperty, HoverAccent));
         t.Triggers.Add(hl);
     }
 
