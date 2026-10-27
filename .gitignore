@@ -4,3 +4,4 @@ publish/
 *.pdb
 *.user
 .vs/
+nomacs_*.exe
