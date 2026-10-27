@@ -12,6 +12,7 @@
 | 2026-10-23 | v1 | 初次单样本容器结构分析 |
 | 2026-10-23 | v2 | 5 件 NG 样本交叉验证，定位记录周期 0x3C00 |
 | 2026-10-27 | v3 | **pair-stream 解码公式确认**（段基址 + 0x04000000 修正）；**ILSpy 逆向**验证 managed 层无文件解析代码、扫描记录为 opaque byte[]；修正头部字段偏移错误 |
+| 2026-10-27 | v4 | 新增第 9 节：**L38 固件备份 `.bak` 容器结构**（v4 明文 JSON 清单 + 加密载荷），含 JSON 清单字段表、容器布局、加密判定依据、SDK 读取路径验证与 REA 工具链限制 |
 
 ## 1. 文件组总体说明
 
@@ -320,6 +321,149 @@ def parse_cognex_raw(path):
 4. **RAW parser 在 camera firmware 层**：PC 端 In-Sight Editor 的 managed DLL 中无 BinaryReader/FileStream 对 RAW 的读取逻辑；magic 字节也不出现在任何可执行文件中。解析逻辑随相机固件分发，不随编辑器安装包提供。
 5. **文件尺寸公式**：`72 + 2 + 25KB_prefix + N × 15360 + tail_metadata`，N 由视野/配置决定（OK=572, NG=415）。
 
+## 9. L38 固件备份文件（`L38-firmware.bak`）结构分析
+
+> 样本：`L38-firmware.bak`，**12,571,524 字节**（11.99 MB），由 In-Sight L38 相机（`OP40-31`，SN `1A2535PP524126`）于 2026-10-27 12:44 导出的系统备份。
+> 该备份与本报告第 2–7 节的 3D RAW **不是同一容器**；此处单独记录，因为备份载荷内可能包含相机侧的应用/配置（即 3D RAW 解析逻辑所在的固件环境）。
+
+### 9.1 容器布局（v4）
+
+```
++----------------------------+ 0    偏移 0
+| UTF-8 JSON 清单（明文）     |      1667 字节
++----------------------------+ 1667
+| 0x00 分隔符（1 字节）       |      1667
++----------------------------+ 1668
+| 加密载荷                    |      12,569,856 字节 (= 785,616 × 16)
++----------------------------+ EOF  12,571,524
+```
+
+关键尺寸关系（逐字节验证）：
+
+- JSON 长度 **1667**，恰好以 `0x00` 结尾于偏移 1667；
+- 载荷起点 **1668**，长度 **12,569,856**，`mod 16 = 0`（AES 分组对齐），`= 785,616` 个 16 字节块；
+- `mod 512 = 256` → 不是 tar 块对齐，排除「明文 tar 直接拼接」的可能。
+
+### 9.2 JSON 清单字段（明文可读部分）
+
+顶层字段（`BackupMetadataV4`，Newtonsoft `JsonConvert` 序列化）：
+
+| 字段 | 值（本样本） | 说明 |
+|---|---|---|
+| `backupVersion` | `4.1.0` | 备份格式版本，决定 SDK 走 v4 分支 |
+| `firmwareVersion` | `25.3.0+1752` | 相机固件版本 |
+| `deviceType` | `Cognex_Lighthouse` | 设备系列 |
+| `primarySensor` | `SONY_IMX421` | 主传感器型号 |
+| `compatibility` | `["deviceType","primarySensor"]` | 恢复时的兼容性校验键 |
+| `hostname` | `OP40-31` | 设备主机名 |
+| `serialNumber` | `1A2535PP524126` | 设备序列号 |
+| `macAddress` | `00:D0:24:C0:F4:5E` | 主网卡 MAC |
+| `productDescription` | `In-Sight L38 Series` | 产品描述 |
+| `dateTime` | `2026-10-27T12:44:15.062745` | 备份生成时间（本地时间，无时区） |
+| `osBuild` | `45355f960da24034044915f819ba8b4acc97f061` | OS 构建哈希（40 位十六进制，同 git SHA-1 长度） |
+
+三个内嵌对象（以文件名为键，非独立文件）：
+
+`product-identification.json`
+
+| 字段 | 值 |
+|---|---|
+| `familyName` | `In-Sight Vision System` |
+| `cogNamerType` / `cogNamerSubType` | `14` / `4` |
+| `cognamerDeviceIdentity` | `0x0E04` |
+| `productDescription` | `In-Sight L38 Series` |
+| `productIdentity` | `0x01060300` |
+| `profinetOrderDescription` | `ISL38-XX` |
+
+`sysinfo.json`（`$type = SysInfo`）
+
+| 字段 | 值 |
+|---|---|
+| `description` | `In-Sight Smart Camera Firmware Package` |
+| `productId` | `5.3.1.0` |
+| `version` / `versionStr` | `25.3.0.1752` / `25.3.0 (1752)` |
+| `minFirmwareVersion` | `0.0.0.0` |
+| `model` | `IS28X` |
+| `bootVersion` / `failsafeVersion` | `null` / `null` |
+
+`hwdata.json`（`$type = hwdata`）
+
+| 字段 | 值 |
+|---|---|
+| `productName` | `ISL38-33B` |
+| `productIdentity` | `0x01060300` |
+| `productFamily` | `Lighthouse` |
+| `serialNumber` / `macAddress` | `1A2535PP524126` / `00:D0:24:C0:F4:5E` |
+| `extraMac1` | `00:D0:24:C0:F4:5F` |
+| `partNumber825` | `826-20248-004` |
+| `minimumFirmwareVersion` | `24.1.0` |
+
+> 清单中**没有**任何 `salt` / `iv` / `keyId` / `nonce` / 校验和字段 → 载荷解密所需的一切都在清单之外，进一步指向「密钥在设备侧」。
+
+### 9.3 加密判定依据
+
+对 12,569,856 字节载荷做的统计与解压测试：
+
+| 检测项 | 结果 | 结论 |
+|---|---|---|
+| Shannon 熵 | **7.999985 / 8** | 与均匀随机不可区分 |
+| 256 个字节值出现次数 | 48,506 – 49,773（期望 ≈ 49,100） | 分布完全均匀 |
+| 重复 16 字节块 | **0 / 785,616** | 非 ECB 模式 |
+| 前 1 MB 内重复 4 字节字 | 12 | 无可见结构 |
+| `zlib` / raw `deflate` / `bz2` / `lzma` | 全部解压失败 | 非压缩流 |
+| 单字节 XOR 全扫描（0x00–0xFF） | 无任何值改善熵 | 非简单混淆 |
+| 文件签名扫描 | ELF / MZ / gzip / xz / zstd / uImage / squashfs / UBI / cramfs **均无** | 非嵌套可执行或镜像 |
+| 明文 JSON 二次出现 | 无（末尾 128 字节亦为随机） | 单一加密段 |
+
+**判定：载荷为强加密（块对齐 + 高熵 + 零重复块），算法与密钥均不在文件中。**
+
+### 9.4 SDK 读取路径（ILSpy 验证）
+
+对 `Cognex.Utilities.Sdk.dll` 的 **25.3.0**（与相机固件同版本）和 **26.1.0** 两版分别反编译，`LigerBackupRestoreService.<GetBackupManifest>` 逻辑一致：
+
+```csharp
+// 1) 逐字节读入直到 0x00 终止
+byte b = binaryReader.ReadByte();
+if (b == 0) break;
+memoryStream.WriteByte(b);
+// 2) Seek(0) 后按文本读出，反序列化为 V4 元数据
+string json = new StreamReader(memoryStream).ReadToEnd();
+BackupMetadataV4 meta = JsonConvert.DeserializeObject<BackupMetadataV4>(json);
+// 3) v4 直接 goto 后续流程 —— 载荷从未被读取
+```
+
+- **v4 分支**：只解析 JSON 清单 → 直接跳到清单装配（`sysInfo` / `hwData` / `productIdentification`），**载荷完全未被访问**。
+- **v3 分支**（v4 解析失败时回退）：`new ContinuousGZipStream(fileStream)` + `TarHelper.ExtractFiles(...)` —— 即 v3 是 gzip+tar，v4 换成了加密载荷。
+- `DownloadBackupFile` 返回 `(string path, long dataSize)`，**落盘后不解密**。
+- 唯一的硬编码 AES-256 key/IV（混淆方法 `a0FamxItwX`）**零调用者**，属混淆器残留：
+
+```
+key = B8 2A 0B 3B BD 86 BA AA 23 34 5E 57 FB BB 38 E2
+      D8 BE 8D 05 EB B9 01 54 9A E0 85 1E DD F4 5F 86
+IV  = 42 5E 0D 87 23 E4 AB 47 6F AA BE B7 7D 25 85 96
+```
+
+  实测该 key/IV 及 9 组派生组合（`IV=payload[0:16]`、ECB、key 反转、零 IV、`sha256(serial)`、`sha256(mac)` 派生 key 等）**全部解密失败**，输出熵仍为 8.00。
+
+**结论：固件备份载荷由相机侧加密，PC SDK 只做透明传输与落盘；密钥绑定设备，不在 PC 安装包内。**
+
+### 9.5 REA 工具链限制（2026-10-27 实测，REA v6.3.0）
+
+| 命令 | 结果 |
+|---|---|
+| `rea inspect` / `inspect-artifact` / `inspect-signature` / `analyze`（含 `--provider ghidra`） | `target_unavailable`：*unsupported binary format* |
+| `rea inspect-firmware-regions` | `capability_unavailable`：需 Linux + `REA_BINWALK_COMMAND` |
+| `rea extract-firmware --offset 1668 --length 12569856` | `capability_unavailable`：需 Linux + `REA_UNBLOB_COMMAND` |
+| `rea analyze --target-format` | schema 中 `const: dos-com`，无 raw-binary 选项 |
+
+REA 支持的目标格式为 PE / ELF / Mach-O / APK / IPA / plist / JS；`.bak` 自定义容器不在其中，固件专用命令全部绑定 Linux 侧 `binwalk` / `unblob`。
+REA 对 Cognex **托管程序集**工作正常（`rea inspect-managed-artifact Cognex.Utilities.Sdk.dll` 可产出 `rea-dotnet-static` evidence），但该程序集本身不含解密逻辑（见 9.4）。
+
+### 9.6 与 3D RAW 的关系
+
+- 对 In-Sight Emulator 25.3.0 `Runtime` 目录下全部 61 个可执行二进制复扫：`11 FA CE 50`（RAW magic）命中 **0**、`QuadMeshData` 命中 **0** → Windows 侧固件运行时不带 3D RAW 解析器。
+- 因此若需拿到 RAW 扫描记录的内部编码（第 8 节第 3 条遗留问题），可行路径只有：**(a)** 解密本备份取出相机侧应用/固件，或 **(b)** 取得未加密的固件升级包（非备份），在 Linux/WSL 环境下用 `binwalk`/`unblob`/Ghidra 分析。
+
 ---
 
-*分析方法：Python struct 逐字节解析 + 多文件 diff + ILSpy 8.2.0 反编译 Cognex managed DLL*
+*分析方法：Python struct 逐字节解析 + 多文件 diff + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4*
