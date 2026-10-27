@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+gradle-dist/
+!gradle-dist/gradle-*.zip
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs / DB
+/auditlog-data/
+*.h2.db
+*.mv.db
+*.trace.db
+
+# Java
+*.class
+
+# Fat jar outputs (keep only timestamped releases desired)
+audit-log-server-*-fat_*.jar
