@@ -1243,7 +1243,7 @@ function extractPoints(buf,mode,off,vmax,maxPts){
       if(Math.abs(x)>vmax||Math.abs(y)>vmax||Math.abs(z)>vmax)continue;
       tmp[cnt*3]=x;tmp[cnt*3+1]=y;tmp[cnt*3+2]=z;cnt++;
     }
-  }else{ // fp1616: u32/65536 连续三元组
+  }else if(mode==="fp1616"){
     var m=Math.floor(n/3);
     stride=Math.max(1,Math.floor(m/maxPts));
     for(var k=0;k<m&&cnt<maxPts;k+=stride){
@@ -1253,12 +1253,196 @@ function extractPoints(buf,mode,off,vmax,maxPts){
       if(Math.abs(a)>vmax||Math.abs(b)>vmax||Math.abs(c)>vmax)continue;
       tmp[cnt*3]=a;tmp[cnt*3+1]=b;tmp[cnt*3+2]=c;cnt++;
     }
+  }else if(mode==="auto"){
+    // auto 模式：尝试标定前缀三元组 + profile pair-stream
+    var triples=extractCleanTriples(buf);
+    var pairs=extractProfilePairs(buf);
+    if(triples||pairs){
+      var all=[];
+      if(triples)all.push(triples);
+      if(pairs)all.push(pairs);
+      return mergeClouds(all);
+    }
+    // 回退：普通 float32 三元组
+    return extractPoints(buf,"f32",off,vmax,maxPts);
   }
   if(cnt===0)return null;
   var arr=new Float32Array(cnt*3);
   arr.set(tmp.subarray(0,cnt*3));
   for(var q=0;q<cnt;q++){var zz=arr[q*3+2];if(zz<minZ)minZ=zz;if(zz>maxZ)maxZ=zz;}
   return {positions:arr,count:cnt,minZ:minZ,maxZ:maxZ};
+}
+
+/* ---------- 标定前缀解码器 ---------- */
+// 从 HEADER 后开始提取连续的、合理的 float32 三元组
+function extractCleanTriples(buf){
+  var dv=new DataView(buf);
+  var off=HEADER, cnt=0, maxTri=2000;
+  var tmp=new Float32Array(maxTri*3);
+  var minZ=1e300,maxZ=-1e300;
+  // 连续三元组：必须满足所有分量有限且 < 1000 (排除扫描记录编码的天文数)
+  while(off+12<=buf.byteLength && cnt<maxTri){
+    var x=dv.getFloat32(off,true),y=dv.getFloat32(off+4,true),z=dv.getFloat32(off+8,true);
+    if(!isFinite(x)||!isFinite(y)||!isFinite(z))break;
+    if(Math.max(Math.abs(x),Math.abs(y),Math.abs(z))>1000)break;
+    tmp[cnt*3]=x;tmp[cnt*3+1]=y;tmp[cnt*3+2]=z;cnt++;
+    if(z<minZ)minZ=z;if(z>maxZ)maxZ=z;
+    off+=12;
+  }
+  if(cnt<5)return null;
+  var arr=new Float32Array(cnt*3);
+  arr.set(tmp.subarray(0,cnt*3));
+  return {positions:arr,count:cnt,minZ:minZ,maxZ:maxZ,label:"标定前缀"};
+}
+
+// Profile pair-stream 解码器（段基址 + 比例缩放方案）
+// pair-stream 起始会被自动检测（在标定前缀之后，first4 float 连续递减且合理）
+function extractProfilePairs(buf){
+  var dv=new DataView(buf);
+  var size=buf.byteLength;
+  // 1. 找 pair-stream 起始：扫描 HEADER+0x5800..HEADER+0x8000 区域
+  //    找连续 N 个 8 字节 pair，first4 float 有限且单调递减，步长 0.1~2mm
+  var pairStart=-1;
+  var scanStart=HEADER+0x5800, scanEnd=Math.min(HEADER+0x8000, size-8);
+  for(var tryOff=scanStart; tryOff<scanEnd; tryOff+=4){
+    // 检查这一点开始的前 3 对
+    var ok=true;
+    var prevF=null, pairCount=0;
+    for(var t=0;t<6;t++){
+      if(tryOff+(t+1)*8>size){ok=false;break;}
+      var fv=dv.getFloat32(tryOff+t*8,true);
+      if(!isFinite(fv)||Math.abs(fv)>2000)ok=false;
+      if(prevF!==null){
+        var step=Math.abs(prevF-fv);
+        if(!(step>0.05&&step<2))ok=false; // 步长绝对值 0.05~2mm 合理
+      }
+      prevF=fv; pairCount++;
+    }
+    if(ok&&pairCount>=6){pairStart=tryOff;break;}
+  }
+  if(pairStart<0){
+    // 备选：找 pair-stream 起始 —— first4 u32 从 0xC4xxxxxx 开始的单调递减序列
+    for(var tryOff2=scanStart; tryOff2<scanEnd; tryOff2+=4){
+      var uFirst=dv.getUint32(tryOff2,true);
+      if((uFirst&0xFF000000)>=0xC0000000 && (uFirst&0xFF000000)<=0xDF000000){
+        pairStart=tryOff2; break;
+      }
+    }
+  }
+  if(pairStart<0)return null;
+
+  // 2. 收集所有 pair 直到 first4 float 非有限或 second4 出现大跳变
+  var pairs=[];
+  var pOff=pairStart;
+  var lastFv=null, zeroRun=0;
+  while(pOff+8<=size){
+    var fv=dv.getFloat32(pOff,true);
+    var uw=dv.getUint32(pOff,true);
+    var vw=dv.getUint32(pOff+4,true);
+    if(!isFinite(fv))break;
+    // 遇到连续几个 near-zero float 表示 pair-stream 结束
+    if(Math.abs(fv)<1e-5){zeroRun++;if(zeroRun>=2)break;}else zeroRun=0;
+    pairs.push({fv:fv,uw:uw,vw:vw,off:pOff});
+    pOff+=8;
+    if(pairs.length>5000)break;
+  }
+  if(pairs.length<10)return null;
+
+  // 3. 段基址解码：检测 u32 跳变 +0x04000000
+  var SEG_JUMP=0x04000000;
+  var segK=0, prevU=null;
+  var correctedUs=new Array(pairs.length);
+  for(var i=0;i<pairs.length;i++){
+    var u=pairs[i].uw;
+    if(prevU!==null && u-prevU>1000000)segK++;
+    correctedUs[i]=u-segK*SEG_JUMP;
+    prevU=u;
+  }
+  // 4. 用 seg0 校准：pair 0 附近 float 值应该是正确的 mm 坐标
+  //    找最长连续的 valid float 段（vmax=2000）作为 seg0 校准点
+  var seg0End=0;
+  for(var i=0;i<pairs.length;i++){
+    if(isFinite(pairs[i].fv)&&Math.abs(pairs[i].fv)<2000)seg0End=i;
+    else break;
+  }
+  var x0, u0, scale;
+  if(seg0End>=2){
+    x0=pairs[0].fv;
+    u0=pairs[0].uw;
+    var xEnd=pairs[seg0End].fv;
+    var uEnd=correctedUs[seg0End];
+    var totalDX=xEnd-x0;
+    var totalDU=uEnd-correctedUs[0];
+    scale=(Math.abs(totalDU)>100)?totalDX/totalDU:-0.000061;
+  }else{
+    return null;
+  }
+
+  // 5. 解码所有 x 坐标，并过滤 outlier（和邻点差 > 50mm 的跳过）
+  var tmp2=new Float32Array(pairs.length*3);
+  var minZs=1e300,maxZs=-1e300;
+  var cnt=0;
+  var prevX=null;
+  for(var i=0;i<pairs.length;i++){
+    var x=x0+scale*(correctedUs[i]-u0);
+    var y=pairs[i].vw/65536 - 90.0; // second4/65536 作为像素列，减 90 居中
+    var z=0; // profile 暂无高度数据
+    if(!isFinite(x))continue;
+    // Outlier 过滤：x 应该在 mm 范围内且与前一点连续
+    if(Math.abs(x)>2000)continue;
+    if(prevX!==null && Math.abs(x-prevX)>50)continue;
+    tmp2[cnt*3]=x;tmp2[cnt*3+1]=y;tmp2[cnt*3+2]=z;cnt++;
+    if(z<minZs)minZs=z;if(z>maxZs)maxZs=z;
+    prevX=x;
+  }
+  if(cnt<5)return null;
+  var arr2=new Float32Array(cnt*3);
+  arr2.set(tmp2.subarray(0,cnt*3));
+  return {positions:arr2,count:cnt,minZ:minZs,maxZ:maxZs,label:"Profile扫描线",pairStart:pairStart};
+}
+
+function mergeClouds(clouds){
+  var total=0;
+  for(var i=0;i<clouds.length;i++){
+    if(!clouds[i])continue;
+    total+=clouds[i].count;
+  }
+  if(total===0)return null;
+  var merged=new Float32Array(total*3);
+  var off=0,minZ=1e300,maxZ=-1e300;
+  // 先算各自 bbox 判断量级是否接近
+  var ranges=[];
+  for(var i=0;i<clouds.length;i++){
+    if(!clouds[i])continue;
+    var cs=clouds[i].positions;
+    var mx=0;
+    for(var j=0;j<clouds[i].count;j++){
+      mx=Math.max(mx,Math.abs(cs[j*3]));
+      mx=Math.max(mx,Math.abs(cs[j*3+1]));
+      mx=Math.max(mx,Math.abs(cs[j*3+2]));
+    }
+    ranges.push(mx);
+  }
+  // 找最大量级
+  var maxRange=0;
+  for(var i=0;i<ranges.length;i++)maxRange=Math.max(maxRange,ranges[i]);
+  // 合并时对每个 cloud 按最大量级归一化（小量级乘到最大量级）
+  for(var ci=0;ci<clouds.length;ci++){
+    if(!clouds[ci])continue;
+    var s=clouds[ci];
+    var pts=s.positions;
+    var range=ranges[ci]||1;
+    var scaleF=(maxRange/range>100)?maxRange/range:1; // 量级差 >100 倍才缩放
+    for(var j=0;j<s.count;j++){
+      merged[off*3]=pts[j*3]*scaleF;
+      merged[off*3+1]=pts[j*3+1]*scaleF;
+      merged[off*3+2]=pts[j*3+2]*scaleF;
+      if(merged[off*3+2]<minZ)minZ=merged[off*3+2];
+      if(merged[off*3+2]>maxZ)maxZ=merged[off*3+2];
+      off++;
+    }
+  }
+  return {positions:merged,count:total,minZ:minZ,maxZ:maxZ};
 }
 
 function show(buf){
@@ -1268,10 +1452,18 @@ function show(buf){
   if(!info.ok){setStatus("解析失败：不是有效的 Cognex RAW 文件");return;}
   var mode=document.getElementById('mode').value;
   if(mode==="auto"){
-    // 自动：先尝试 float32 三元组，点数过少则回退 16.16 定点
-    var r=extractPoints(buf,"f32",HEADER,parseFloat(document.getElementById('vmax').value),parseInt(document.getElementById('maxpts').value));
-    if(!r||r.count<500)r=extractPoints(buf,"fp1616",HEADER,1e6,parseInt(document.getElementById('maxpts').value));
-    render(r,"自动模式");
+    // 自动：优先解码 Profile pair-stream（Block B, 毫米级，干净轮廓）
+    var profilePts=extractProfilePairs(buf);
+    var triplePts=extractCleanTriples(buf);
+    if(profilePts){
+      // 只渲染 profile（单一量级，正确可见）
+      render(profilePts,"自动模式 - Profile扫描线");
+    }else{
+      // profile 不可用时回退
+      var r=extractPoints(buf,"f32",HEADER,10000,parseInt(document.getElementById('maxpts').value));
+      if(!r||r.count<500)r=extractPoints(buf,"fp1616",HEADER,1e6,parseInt(document.getElementById('maxpts').value));
+      render(r,"自动模式（回退）");
+    }
   }else{
     var off=parseInt(document.getElementById('off').value)||HEADER;
     var vm=parseFloat(document.getElementById('vmax').value);
