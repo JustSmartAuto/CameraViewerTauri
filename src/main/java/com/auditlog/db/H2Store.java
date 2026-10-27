@@ -24,7 +24,8 @@ public class H2Store implements AutoCloseable {
 
     public H2Store(String dbPath) {
         // dbPath like "./auditlog/auditlog" → H2 file "./auditlog/auditlog.mv.db"
-        this.url = "jdbc:h2:file:" + dbPath + ";AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=PostgreSQL";
+        // AUTO_SERVER=FALSE (default) — 单 JVM 内嵌，不绑定额外 TCP 端口
+        this.url = "jdbc:h2:file:" + dbPath + ";DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE";
     }
 
     public synchronized void open() throws SQLException {
@@ -42,24 +43,23 @@ public class H2Store implements AutoCloseable {
 
     private void createSchema() throws SQLException {
         try (var st = conn.createStatement()) {
-            st.execute("""
-                CREATE TABLE IF NOT EXISTS audit_event (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                    ts TIMESTAMP WITH TIME ZONE NOT NULL,
-                    hostname VARCHAR(255),
-                    severity INT,
-                    severity_name VARCHAR(32),
-                    app_name VARCHAR(255),
-                    proc_id VARCHAR(128),
-                    msg_id VARCHAR(255),
-                    facility INT,
-                    source_ip VARCHAR(64),
-                    message CLOB,
-                    structured_data CLOB,
-                    raw_line CLOB
-                )""");
-            st.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts     ON audit_event (ts)");
-            st.execute("CREATE INDEX IF NOT EXISTS idx_audit_host   ON audit_event (hostname)");
+            // 单行 SQL — 避免 H2 2.5.x 对 text block 里尾随 \n 的怪异解析
+            st.execute("CREATE TABLE IF NOT EXISTS audit_event (" +
+                    "id BIGINT AUTO_INCREMENT PRIMARY KEY, " +
+                    "ts TIMESTAMP NOT NULL, " +
+                    "hostname VARCHAR(255), " +
+                    "severity INT, " +
+                    "severity_name VARCHAR(32), " +
+                    "app_name VARCHAR(255), " +
+                    "proc_id VARCHAR(128), " +
+                    "msg_id VARCHAR(255), " +
+                    "facility INT, " +
+                    "source_ip VARCHAR(64), " +
+                    "message CLOB, " +
+                    "structured_data CLOB, " +
+                    "raw_line CLOB)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_event (ts)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_audit_host ON audit_event (hostname)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_audit_sev   ON audit_event (severity)");
         }
     }
@@ -71,7 +71,7 @@ public class H2Store implements AutoCloseable {
                 "facility, source_ip, message, structured_data, raw_line) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
             Instant ts = msg.timestamp() == null ? Instant.now() : msg.timestamp();
-            ps.setObject(1, Timestamp.from(ts).toInstant().atZone(java.time.ZoneOffset.UTC));
+            ps.setTimestamp(1, Timestamp.from(ts));
             ps.setString(2, msg.hostname());
             ps.setInt(3, msg.severity());
             ps.setString(4, msg.severityName());

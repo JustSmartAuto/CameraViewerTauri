@@ -27,6 +27,16 @@ public class SyslogParser {
     /** Parse one raw TCP syslog line. */
     public SyslogMessage parse(String raw, String sourceIp) {
         String line = raw.strip();
+        // 兼容：有些发送端会在消息前加 UTF-8 BOM 或其他单字节前缀
+        // 直接找第一个 { 或 < 来截取有效消息
+        if (!line.isBlank() && !line.startsWith("<") && !line.startsWith("{")) {
+            int brace = line.indexOf('{');
+            int lt = line.indexOf('<');
+            int start = -1;
+            if (brace >= 0 && (lt < 0 || brace < lt)) start = brace;
+            else if (lt >= 0) start = lt;
+            if (start > 0) line = line.substring(start).strip();
+        }
         if (line.isBlank()) return malformed(line, sourceIp);
         if (line.startsWith("<")) {
             return parseRfc5424(line, sourceIp);
