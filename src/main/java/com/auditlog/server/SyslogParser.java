@@ -64,19 +64,10 @@ public class SyslogParser {
 
         String message = null;
         if (tokens.size() > 6) {
-            // remainder after structured data token is the MSG field
-            int idx = indexOfTokenStart(fields, 6);
-            if (idx >= 0) {
-                String after = fields.substring(idx);
-                int sdEnd = findStructuredDataEnd(after);
-                if (sdEnd >= 0 && sdEnd + 1 < after.length()) {
-                    // skip one leading space
-                    message = after.substring(sdEnd + 1).replaceFirst("^ ", "");
-                }
-            }
+            message = tokens.get(tokens.size() - 1);
         }
 
-        return new SyslogMessage(ts, hostname, facility, severity, app, procId, msgId, sd, message, raw, sourceIp);
+        return new SyslogMessage(ts, hostname, facility, severity, app, procId, msgId, sd, message, line, sourceIp);
     }
 
     /** Split on spaces, preserving empty-field marker '-', but keep SD intact. */

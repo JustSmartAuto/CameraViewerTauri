@@ -174,7 +174,7 @@ public class MainFrame extends JFrame {
                 countLabel.setText("events: " + total + "  shown: " + rows.size());
 
                 if (autoScroll.isSelected() && !rows.isEmpty()) {
-                    table.rowSorterChanged(null); // refresh
+                    table.scrollRectToVisible(table.getCellRect(0, 0, true));
                 }
             } catch (Exception e) {
                 countLabel.setText("error: " + e.getMessage());

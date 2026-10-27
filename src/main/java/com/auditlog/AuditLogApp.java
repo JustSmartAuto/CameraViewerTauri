@@ -55,7 +55,7 @@ public final class AuditLogApp {
             catch (Exception e) { log.warn("autostart failed: {}", e.getMessage()); }
         }
 
-        SwingUtilities.invokeLater(frame::setVisible);
+        SwingUtilities.invokeLater(() -> frame.setVisible(true));
 
         // Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
