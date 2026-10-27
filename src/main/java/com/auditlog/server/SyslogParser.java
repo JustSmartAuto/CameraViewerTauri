@@ -1,5 +1,9 @@
 package com.auditlog.server;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -23,10 +27,105 @@ public class SyslogParser {
     /** Parse one raw TCP syslog line. */
     public SyslogMessage parse(String raw, String sourceIp) {
         String line = raw.strip();
+        if (line.isBlank()) return malformed(line, sourceIp);
         if (line.startsWith("<")) {
             return parseRfc5424(line, sourceIp);
         }
+        // JSON (Fluentd forward / Cognex 111.json-style)
+        if (line.startsWith("{")) {
+            return parseJsonForward(line, sourceIp);
+        }
         return parseJsonRaw(line, sourceIp);
+    }
+
+    /**
+     * Parse a JSON object that Fluentd sends upstream. Two shapes observed:
+     * <ul>
+     *   <li>Cognex In-Sight audit log export: top-level fields timestamp, hostname, severity,
+     *       type, event, result, structuredData (map with auditEvent@39975 / configChange@39975 / ...)</li>
+     *   <li>Fluentd generic forward: has {@code message} + {@code fluent_time} or similar</li>
+     * </ul>
+     * We also accept a JSON array of one element (batch forward).
+     */
+    private SyslogMessage parseJsonForward(String line, String sourceIp) {
+        try {
+            JsonElement root = JsonParser.parseString(line);
+            JsonObject obj;
+            if (root.isJsonArray() && root.getAsJsonArray().size() > 0) {
+                JsonElement first = root.getAsJsonArray().get(0);
+                if (first.isJsonPrimitive()) {
+                    // Fluentd "<tag> <time> <message>" concatenated form — treat the first primitive as message
+                    return new SyslogMessage(Instant.now(), null, 0, 0, null, null, null, Map.of(), first.getAsString(), line, sourceIp);
+                }
+                obj = first.getAsJsonObject();
+            } else {
+                obj = root.getAsJsonObject();
+            }
+
+            Instant ts = null;
+            if (obj.has("timestamp")) {
+                try { ts = Instant.parse(obj.get("timestamp").getAsString()); }
+                catch (Exception ignored) {}
+            }
+            if (ts == null && obj.has("fluent_time")) {
+                try { ts = Instant.ofEpochSecond(obj.get("fluent_time").getAsLong()); }
+                catch (Exception ignored) {}
+            }
+
+            String hostname = stringOrNull(obj, "hostname");
+            String message = stringOrNull(obj, "message");
+            if (message == null) message = stringOrNull(obj, "result");
+            if (message == null) message = stringOrNull(obj, "_msg");
+
+            int severity = 0;
+            String sev = stringOrNull(obj, "severity");
+            if (sev != null) {
+                severity = switch (sev.toLowerCase()) {
+                    case "emerg", "panic" -> 0;
+                    case "alert" -> 1;
+                    case "crit", "critical" -> 2;
+                    case "err", "error" -> 3;
+                    case "warn", "warning" -> 4;
+                    case "notice" -> 5;
+                    case "info", "information" -> 6;
+                    case "debug", "trace" -> 7;
+                    default -> 6;
+                };
+            }
+
+            String type = stringOrNull(obj, "type");
+            String event = stringOrNull(obj, "event");
+            String msgId = (type != null && event != null) ? type + "/" + event : null;
+
+            // structuredData map — preserve all K/V pairs, also stash raw JSON blob
+            Map<String, Map<String, String>> sd = new LinkedHashMap<>();
+            if (obj.has("structuredData") && obj.get("structuredData").isJsonObject()) {
+                for (var entry : obj.getAsJsonObject("structuredData").entrySet()) {
+                    Map<String, String> inner = new LinkedHashMap<>();
+                    JsonElement val = entry.getValue();
+                    if (val.isJsonObject()) {
+                        for (var e2 : val.getAsJsonObject().entrySet()) {
+                            inner.put(e2.getKey(), e2.getValue().toString());
+                        }
+                    } else if (val.isJsonPrimitive()) {
+                        inner.put("value", val.getAsString());
+                    }
+                    sd.put(entry.getKey(), inner);
+                }
+            }
+            // also surface type/event as pseudo SD entries so UI filter logic can see them
+            if (type != null) sd.put("_type", Map.of("value", type));
+            if (event != null) sd.put("_event", Map.of("value", event));
+
+            return new SyslogMessage(ts, hostname, 0, severity, type, null, msgId, sd, message, line, sourceIp);
+        } catch (Exception e) {
+            return new SyslogMessage(Instant.now(), null, 0, 0, null, null, null, Map.of(), line, line, sourceIp);
+        }
+    }
+
+    private static String stringOrNull(JsonObject o, String key) {
+        if (!o.has(key) || !o.get(key).isJsonPrimitive()) return null;
+        return o.get(key).getAsString();
     }
 
     private SyslogMessage parseRfc5424(String line, String sourceIp) {
