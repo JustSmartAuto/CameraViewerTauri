@@ -1,0 +1,11 @@
+{
+    "PluginName": "SVG Overlay",
+    "PluginId": "SvgOverlayPlugin",
+    "AuthorName": "NomacsSvgOverlayPlugin",
+    "Company": "",
+    "DateCreated": "2026-10-26",
+    "DateModified": "2026-10-26",
+    "Version": "1.0.0",
+    "Tagline": "Renders a same-name SVG overlay on images",
+    "Description": "Renders a same-name SVG (foo.svg next to foo.bmp/png/avif/jpg/jpeg) as a transparent overlay that is automatically scaled to fit the viewport. Opening an .svg file directly shows the overlay as well."
+}

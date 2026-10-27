@@ -1,0 +1,154 @@
+{
+  "cameras": [
+    {
+      "name": "OP40-32",
+      "ip": "192.168.20.32",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-125",
+      "ip": "192.168.20.125",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-122",
+      "ip": "192.168.20.122",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-124",
+      "ip": "192.168.20.124",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-120",
+      "ip": "192.168.20.120",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-123",
+      "ip": "192.168.20.123",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP90-121",
+      "ip": "192.168.20.121",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP40-31",
+      "ip": "192.168.20.31",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP100-155",
+      "ip": "192.168.20.155",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP110-184",
+      "ip": "192.168.20.184",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP110-183",
+      "ip": "192.168.20.183",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP100-156",
+      "ip": "192.168.20.156",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP110-182",
+      "ip": "192.168.20.182",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP110-181",
+      "ip": "192.168.20.181",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    },
+    {
+      "name": "OP50-198",
+      "ip": "192.168.20.198",
+      "wsPort": 80,
+      "ftpPort": 21,
+      "user": "admin",
+      "password": "",
+      "ftps": true,
+      "trustAllCerts": true
+    }
+  ]
+}

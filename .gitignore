@@ -1,0 +1,10 @@
+# 构建产物
+/build/
+installer/bin/
+installer/obj/
+
+# 日志与临时文件
+*.log
+
+# 安装包输出（根目录保留发布用的 Setup.exe）
+/installer/**/Release/
