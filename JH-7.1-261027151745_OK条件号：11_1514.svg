@@ -1,0 +1,100 @@
+<svg     xmlns="http://www.w3.org/2000/svg"     xmlns:xlink="http://www.w3.org/1999/xlink"     version="1.1"     font-family="arial"     width="2448" height="2048" viewBox="0 0 2448 2048">
+<!--image JH-7.1-261027151745_OK条件号：11_1514.bmp: /cam0/img/000000000010020?sz=2448,2048 -->
+<image x="0" y="0" width="2448px" height="2048px" xlink:href="JH-7.1-261027151745_OK条件号：11_1514.bmp"/>
+<defs>
+<marker id="cam00000000040FAd0" viewBox="0 0 15 15" refX="7.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="10.000000" markerHeight="10.000000" orient="auto">
+<path d="M 0 0 L 15 7.5 L 0 15 z" fill="#00FF00"/>
+</marker>
+
+<pattern id="cam00000000040F9d2" patternUnits="userSpaceOnUse" x="0" y="0" width="10.000000" height="10.000000" viewBox="0 0 10.000000 10.000000" >
+<path d="M 0 10.000000 10.000000 0" stroke-width="1.000000" stroke="#00FF00" />
+</pattern>
+
+</defs>
+<style>
+	.s-cam0000000002BFF	{ font-size:10.00pt;font-family:Arial; }
+	.s-cam0000000002BFD	{ font-size:14.00pt;font-family:Arial; }
+	.s-cam0000000002C00	{ font-size:15.00pt;font-family:Arial; }
+	.s-cam0000000002BFE	{ font-size:25.00pt;font-family:Arial; }
+	.s-cam0000000002BFC	{ font-size:8.00pt;font-family:Arial; }
+	.ds-cam0000000002BFB	{ font-size:9.00pt;stroke-width:2.00; }
+</style>
+<g data-c="H0" class="s-cam0000000002BFC"><text x="2292" y="1899" style="fill:#32CD32" dominant-baseline="hanging" > 428.000</text>
+</g>
+<g data-c="B5" class="ds-cam0000000002BFB"></g>
+<g data-c="B9" class="ds-cam0000000002BFB"></g>
+<g data-c="G12" class="s-cam0000000002BFE"><text x="10" y="0" style="fill:#32CD32" dominant-baseline="hanging" >2026 年10月27日15:30</text>
+</g>
+<g data-c="A15" class="ds-cam0000000002BFB"></g>
+<g data-c="I16" class="ds-cam0000000002BFB"></g>
+<g data-c="D34" class="s-cam0000000002BFD"><text x="10" y="300" style="fill:#00FF00" dominant-baseline="hanging" >型号：JZC1B01-1A</text>
+</g>
+<g data-c="A36" class="s-cam0000000002BFC"><text x="0" y="1904" style="fill:#32CD32" dominant-baseline="hanging" >执行程序段1</text>
+</g>
+<g data-c="G37" class="editable ds-cam0000000002BFB"></g>
+<g data-c="K37" class="s-cam0000000002C00"><text x="10" y="500" style="fill:#00FF00" dominant-baseline="hanging" >正面检测OK</text>
+</g>
+<g data-c="L37" class="ds-cam0000000002BFB"><text x="799" y="1055" style="fill:#00FF00"  text-anchor="middle" ><tspan dy="-0.5em" >正面检测OK</tspan></text>
+<defs>
+<g id="cam00000000040F6s0">
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 h 289.8" stroke="transparent" fill="none"/>
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 v 279.3" stroke="transparent" fill="none"/>
+<text x="1088.9" y="1051.5" style="fill:#00FF00"  text-anchor="middle" ><tspan dy="-0.5em" >X</tspan></text>
+<text x="795.6" y="1334.3" style="fill:#00FF00"  text-anchor="end" ><tspan dy="0.2em" >Y</tspan></text>
+<path d=" M 799.1,1055 h 579.7 v 558.5 h -579.7z" stroke="#00FF00"/>
+</g>
+<use xlink:href="#cam00000000040F6s0" fill="none"/>
+</defs>
+<g data-cognex-compositeregion="fill">
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 h 289.8" stroke="transparent" fill="none"/>
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 v 279.3" stroke="transparent" fill="none"/>
+<text x="1088.9" y="1051.5" style="fill:#00FF00"  text-anchor="middle" ><tspan dy="-0.5em" >X</tspan></text>
+<text x="795.6" y="1334.3" style="fill:#00FF00"  text-anchor="end" ><tspan dy="0.2em" >Y</tspan></text>
+<path d=" M 799.1,1055 h 579.7 v 558.5 h -579.7z" stroke="#00FF00" fill="none"/>
+</g>
+<g data-cognex-compositeregion="add">
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 h 289.8" stroke="transparent" fill="none"/>
+<path marker-end="url(#cam00000000040FAd0)" d=" M 799.1,1055 v 279.3" stroke="transparent" fill="none"/>
+<text x="1088.9" y="1051.5" style="fill:#00FF00"  text-anchor="middle" ><tspan dy="-0.5em" >X</tspan></text>
+<text x="795.6" y="1334.3" style="fill:#00FF00"  text-anchor="end" ><tspan dy="0.2em" >Y</tspan></text>
+<path d=" M 799.1,1055 h 579.7 v 558.5 h -579.7z" stroke="#00FF00" fill="none"/>
+</g>
+</g>
+<g data-c="M37" class="editable ds-cam0000000002BFB"></g>
+<g data-c="A41" class="editable ds-cam0000000002BFB"></g>
+<g data-c="A43" class="ds-cam0000000002BFB"></g>
+<g data-c="G47" class="editable ds-cam0000000002BFB"></g>
+<g data-c="K47" class="s-cam0000000002C00"><text x="11" y="600" style="fill:#00FF00" dominant-baseline="hanging" >缩口直径检测OK_8.23287mm间隙_1.12573mm</text>
+</g>
+<g data-c="A52" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B52" class="ds-cam0000000002BFB"></g>
+<g data-c="A54" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B54" class="ds-cam0000000002BFB"></g>
+<g data-c="A60" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B60" class="ds-cam0000000002BFB"></g>
+<g data-c="A61" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B61" class="ds-cam0000000002BFB"></g>
+<g data-c="A62" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B62" class="ds-cam0000000002BFB"></g>
+<g data-c="A63" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B63" class="ds-cam0000000002BFB"></g>
+<g data-c="A64" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B64" class="ds-cam0000000002BFB"></g>
+<g data-c="A66" class="ds-cam0000000002BFB"></g>
+<g data-c="E66" class="ds-cam0000000002BFB"><circle  cx="1054.4" cy="1318.3" r="187.1" stroke="#32CD32" fill="none"/>
+</g>
+<g data-c="A68" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B68" class="ds-cam0000000002BFB"></g>
+<g data-c="A69" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B69" class="ds-cam0000000002BFB"></g>
+<g data-c="A70" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B70" class="ds-cam0000000002BFB"></g>
+<g data-c="A71" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B71" class="ds-cam0000000002BFB"></g>
+<g data-c="A72" class="editable ds-cam0000000002BFB"></g>
+<g data-c="B72" class="ds-cam0000000002BFB"></g>
+<g data-c="A74" class="ds-cam0000000002BFB"></g>
+<g data-c="E74" class="ds-cam0000000002BFB"><circle  cx="1056.1" cy="1312.1" r="161.5" stroke="#32CD32" fill="none"/>
+</g>
+<g data-c="A172" class="ds-cam0000000002BFB"></g>
+</svg>
