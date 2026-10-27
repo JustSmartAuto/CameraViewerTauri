@@ -376,158 +376,113 @@ public class MainWindow : Window
         return mi;
     }
 
-    private ControlTemplate TopLevelTemplate()
-    {
-        var t = new ControlTemplate(typeof(MenuItem));
-        var root = new FrameworkElementFactory(typeof(Grid), "root");
-        var bd = new FrameworkElementFactory(typeof(Border), "Bd");
-        bd.SetBinding(Border.BackgroundProperty,
-            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
-        bd.SetValue(Border.SnapsToDevicePixelsProperty, true);
-        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
-        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
-        cp.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
-        bd.AppendChild(cp);
-        var popup = new FrameworkElementFactory(typeof(Popup), "PART_Popup");
-        popup.SetValue(Popup.PlacementProperty, PlacementMode.Bottom);
-        popup.SetValue(Popup.AllowsTransparencyProperty, true);
-        popup.SetValue(Popup.StaysOpenProperty, false);
-        var pb = new FrameworkElementFactory(typeof(Border));
-        pb.SetValue(Border.BackgroundProperty, SubmenuBg);
-        pb.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x44, 0x44, 0x44)));
-        pb.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        pb.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
-        var sv = new FrameworkElementFactory(typeof(ScrollViewer));
-        sv.SetValue(ScrollViewer.MaxHeightProperty, 520.0);
-        sv.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        sv.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        sv.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
-        pb.AppendChild(sv);
-        popup.AppendChild(pb);
-        root.AppendChild(bd);
-        root.AppendChild(popup);
-        t.VisualTree = root;
-        AddHoverTrigger(t);
-        return t;
-    }
+    private ControlTemplate TopLevelTemplate() => ParseMenuItemTemplate(TopLevelXaml);
+    private ControlTemplate SubmenuHeaderTemplate() => ParseMenuItemTemplate(SubHeaderXaml);
+    private ControlTemplate SubmenuItemTemplate() => ParseMenuItemTemplate(SubItemXaml);
+    private ControlTemplate SubmenuCheckedTemplate() => ParseMenuItemTemplate(SubCheckedXaml);
 
-    private ControlTemplate SubmenuHeaderTemplate()
-    {
-        var t = new ControlTemplate(typeof(MenuItem));
-        var bd = new FrameworkElementFactory(typeof(Grid), "root");
-        bd.SetValue(Grid.MarginProperty, new Thickness(2));
-        var tb = new FrameworkElementFactory(typeof(Border), "Bd");
-        tb.SetBinding(Border.BackgroundProperty,
-            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        tb.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
-        var inner = new FrameworkElementFactory(typeof(Grid));
-        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
-        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
-        cp.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
-        cp.SetValue(Grid.ColumnProperty, 0);
-        var arr = new FrameworkElementFactory(typeof(TextBlock), "arrow");
-        arr.SetValue(TextBlock.TextProperty, "▶");
-        arr.SetValue(TextBlock.ForegroundProperty, GestureText);
-        arr.SetValue(TextBlock.FontSizeProperty, 9.0);
-        arr.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-        arr.SetValue(Grid.ColumnProperty, 2);
-        inner.AppendChild(cp);
-        inner.AppendChild(arr);
-        tb.AppendChild(inner);
-        var popup = new FrameworkElementFactory(typeof(Popup), "PART_Popup");
-        popup.SetValue(Popup.PlacementProperty, PlacementMode.Right);
-        popup.SetValue(Popup.AllowsTransparencyProperty, true);
-        popup.SetValue(Popup.StaysOpenProperty, false);
-        var pb = new FrameworkElementFactory(typeof(Border));
-        pb.SetValue(Border.BackgroundProperty, SubmenuBg);
-        pb.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x44, 0x44, 0x44)));
-        pb.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        pb.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
-        var sv = new FrameworkElementFactory(typeof(ScrollViewer));
-        sv.SetValue(ScrollViewer.MaxHeightProperty, 520.0);
-        sv.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        sv.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        sv.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
-        pb.AppendChild(sv);
-        popup.AppendChild(pb);
-        bd.AppendChild(popup);
-        t.VisualTree = bd;
-        AddHoverTrigger(t);
-        return t;
-    }
+    private static ControlTemplate ParseMenuItemTemplate(string xaml) =>
+        (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
 
-    private ControlTemplate SubmenuItemTemplate()
-    {
-        var t = new ControlTemplate(typeof(MenuItem));
-        var bd = new FrameworkElementFactory(typeof(Border), "Bd");
-        bd.SetBinding(Border.BackgroundProperty,
-            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
-        bd.SetValue(Border.MarginProperty, new Thickness(2, 0, 2, 0));
-        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
-        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
-        cp.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
-        cp.SetValue(Grid.ColumnProperty, 0);
-        var gest = new FrameworkElementFactory(typeof(TextBlock));
-        gest.SetBinding(TextBlock.TextProperty, new Binding("Tag") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        gest.SetValue(TextBlock.ForegroundProperty, GestureText);
-        gest.SetValue(TextBlock.FontSizeProperty, 12.0);
-        gest.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-        gest.SetValue(Grid.ColumnProperty, 2);
-        var inner = new FrameworkElementFactory(typeof(Grid));
-        inner.AppendChild(cp);
-        inner.AppendChild(gest);
-        bd.AppendChild(inner);
-        t.VisualTree = bd;
-        AddHoverTrigger(t);
-        return t;
-    }
+    private const string TopLevelXaml = """
+<ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="MenuItem">
+  <Grid>
+    <Border x:Name="Bd" Background="Transparent" Padding="10,5,10,5" SnapsToDevicePixels="True">
+      <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+    </Border>
+    <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Bottom" AllowsTransparency="True" StaysOpen="False" PopupAnimation="Fade" Focusable="False">
+      <Border Background="#FF232323" BorderBrush="#FF444444" BorderThickness="1" CornerRadius="4" Margin="0,0,8,8">
+        <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsPresenter/>
+        </ScrollViewer>
+      </Border>
+    </Popup>
+  </Grid>
+  <ControlTemplate.Triggers>
+    <Trigger Property="MenuItem.IsHighlighted" Value="True">
+      <Setter TargetName="Bd" Property="Border.Background" Value="#FF3E5C79"/>
+    </Trigger>
+  </ControlTemplate.Triggers>
+</ControlTemplate>
+""";
 
-    private ControlTemplate SubmenuCheckedTemplate()
-    {
-        var t = new ControlTemplate(typeof(MenuItem));
-        var bd = new FrameworkElementFactory(typeof(Border), "Bd");
-        bd.SetBinding(Border.BackgroundProperty,
-            new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        bd.SetValue(Border.PaddingProperty, new Thickness(10, 5, 10, 5));
-        bd.SetValue(Border.MarginProperty, new Thickness(2, 0, 2, 0));
-        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
-        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
-        cp.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
-        cp.SetValue(Grid.ColumnProperty, 0);
-        var gest = new FrameworkElementFactory(typeof(TextBlock));
-        gest.SetBinding(TextBlock.TextProperty, new Binding("Tag") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-        gest.SetValue(TextBlock.ForegroundProperty, GestureText);
-        gest.SetValue(TextBlock.FontSizeProperty, 12.0);
-        gest.SetValue(Grid.ColumnProperty, 2);
-        var tick = new FrameworkElementFactory(typeof(TextBlock), "tick");
-        tick.SetValue(TextBlock.TextProperty, "✓");
-        tick.SetValue(TextBlock.ForegroundProperty, ThumbHighlight);
-        tick.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-        tick.SetValue(Grid.ColumnProperty, 1);
-        tick.SetBinding(UIElement.VisibilityProperty,
-            new Binding("IsChecked")
-            {
-                RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
-                Converter = new System.Windows.Controls.BooleanToVisibilityConverter()
-            });
-        var inner = new FrameworkElementFactory(typeof(Grid));
-        inner.AppendChild(cp);
-        inner.AppendChild(tick);
-        inner.AppendChild(gest);
-        bd.AppendChild(inner);
-        t.VisualTree = bd;
-        AddHoverTrigger(t);
-        return t;
-    }
+    private const string SubHeaderXaml = """
+<ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="MenuItem">
+  <Grid>
+    <Border x:Name="Bd" Margin="2" Background="Transparent" Padding="10,5,10,5" SnapsToDevicePixels="True">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="22"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2" Text="▶" FontSize="9" Foreground="#FF999999" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+    <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Right" AllowsTransparency="True" StaysOpen="False" PopupAnimation="Fade" Focusable="False">
+      <Border Background="#FF232323" BorderBrush="#FF444444" BorderThickness="1" CornerRadius="4" Margin="0,0,8,8">
+        <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsPresenter/>
+        </ScrollViewer>
+      </Border>
+    </Popup>
+  </Grid>
+  <ControlTemplate.Triggers>
+    <Trigger Property="MenuItem.IsHighlighted" Value="True">
+      <Setter TargetName="Bd" Property="Border.Background" Value="#FF3E5C79"/>
+    </Trigger>
+  </ControlTemplate.Triggers>
+</ControlTemplate>
+""";
 
-    private static void AddHoverTrigger(ControlTemplate t)
-    {
-        var hl = new Trigger { Property = MenuItem.IsHighlightedProperty, Value = true };
-        hl.Setters.Add(new Setter(Control.BackgroundProperty, HoverAccent));
-        t.Triggers.Add(hl);
-    }
+    private const string SubItemXaml = """
+<ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="MenuItem">
+  <Border x:Name="Bd" Margin="2,0,2,0" Background="Transparent" Padding="10,5,10,5" SnapsToDevicePixels="True">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="22"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="2" FontSize="12" Foreground="#FF999999" VerticalAlignment="Center"
+                 Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+    </Grid>
+  </Border>
+  <ControlTemplate.Triggers>
+    <Trigger Property="MenuItem.IsHighlighted" Value="True">
+      <Setter TargetName="Bd" Property="Border.Background" Value="#FF3E5C79"/>
+    </Trigger>
+  </ControlTemplate.Triggers>
+</ControlTemplate>
+""";
+
+    private const string SubCheckedXaml = """
+<ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="MenuItem">
+  <Border x:Name="Bd" Margin="2,0,2,0" Background="Transparent" Padding="10,5,10,5" SnapsToDevicePixels="True">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="22"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <TextBlock x:Name="tick" Grid.Column="0" Text="✓" Foreground="#FF4E9EEA" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
+      <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="2" FontSize="12" Foreground="#FF999999" VerticalAlignment="Center"
+                 Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+    </Grid>
+  </Border>
+  <ControlTemplate.Triggers>
+    <Trigger Property="MenuItem.IsHighlighted" Value="True">
+      <Setter TargetName="Bd" Property="Border.Background" Value="#FF3E5C79"/>
+    </Trigger>
+    <Trigger Property="MenuItem.IsChecked" Value="True">
+      <Setter TargetName="tick" Property="TextBlock.Visibility" Value="Visible"/>
+    </Trigger>
+  </ControlTemplate.Triggers>
+</ControlTemplate>
+""";
 
     private static ImageSource? LoadIcon()
     {
