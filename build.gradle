@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.auditlog'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // FlatLaf — modern flat look and feel for Swing
+    implementation 'com.formdev:flatlaf:3.7.1'
+    implementation 'com.formdev:flatlaf-intellij-themes:3.7.1'
+
+    // H2 Database — embedded file mode
+    implementation 'com.h2database:h2:2.5.252'
+
+    // JSON
+    implementation 'com.google.code.gson:gson:2.11.0'
+
+    // Logging
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+}
+
+// ----- fatJar task -----
+task fatJar(type: Jar) {
+    manifest {
+        attributes(
+            'Main-Class': 'com.auditlog.AuditLogApp',
+            'Implementation-Title': 'Audit Log Server',
+            'Implementation-Version': version
+        )
+    }
+    archiveClassifier = 'fat'
+    archiveFileName = "audit-log-server-${version}-fat.jar"
+    destinationDirectory = file('.')
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with jar
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+build.dependsOn fatJar
