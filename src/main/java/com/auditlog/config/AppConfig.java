@@ -18,8 +18,13 @@ public class AppConfig {
     /** Bind address. 0.0.0.0 = all IPv4 interfaces (default), 127.0.0.1 = loopback only. */
     public String syslogBindAddress = "0.0.0.0";
     public boolean tlsEnabled = false;
+    /** PKCS#12 密钥库（.p12/.pfx）。与下面的 PEM 证书+私钥二选一，PEM 优先。 */
     public String tlsKeystorePath = "";
     public String tlsKeystorePassword = "";
+    /** PEM 证书（可含中间证书链），配合 tlsKeyPath 使用（Cognex 附件的 Certification）。 */
+    public String tlsCertPath = "";
+    /** PEM 私钥（PKCS#8，或 PKCS#1 RSA 私钥），Cognex 附件的 Key。 */
+    public String tlsKeyPath = "";
     public String tlsTruststorePath = "";
     public String tlsTruststorePassword = "";
 
@@ -59,6 +64,8 @@ public class AppConfig {
                 cfg.tlsEnabled         = Boolean.parseBoolean(p.getProperty("syslog.tls.enabled", String.valueOf(cfg.tlsEnabled)));
                 cfg.tlsKeystorePath    = p.getProperty("syslog.tls.keystore", cfg.tlsKeystorePath);
                 cfg.tlsKeystorePassword = p.getProperty("syslog.tls.keystore.password", cfg.tlsKeystorePassword);
+                cfg.tlsCertPath        = p.getProperty("syslog.tls.cert", cfg.tlsCertPath);
+                cfg.tlsKeyPath         = p.getProperty("syslog.tls.key", cfg.tlsKeyPath);
                 cfg.tlsTruststorePath  = p.getProperty("syslog.tls.truststore", cfg.tlsTruststorePath);
                 cfg.tlsTruststorePassword = p.getProperty("syslog.tls.truststore.password", cfg.tlsTruststorePassword);
                 cfg.h2DbPath           = p.getProperty("h2.db.path", cfg.h2DbPath);
@@ -83,6 +90,8 @@ public class AppConfig {
         p.setProperty("syslog.tls.enabled", String.valueOf(tlsEnabled));
         p.setProperty("syslog.tls.keystore", tlsKeystorePath);
         p.setProperty("syslog.tls.keystore.password", tlsKeystorePassword);
+        p.setProperty("syslog.tls.cert", tlsCertPath);
+        p.setProperty("syslog.tls.key", tlsKeyPath);
         p.setProperty("syslog.tls.truststore", tlsTruststorePath);
         p.setProperty("syslog.tls.truststore.password", tlsTruststorePassword);
         p.setProperty("h2.db.path", h2DbPath);

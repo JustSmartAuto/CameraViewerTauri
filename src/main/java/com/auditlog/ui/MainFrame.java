@@ -13,6 +13,7 @@ import java.awt.*;
 import java.awt.event.InputEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -197,6 +198,12 @@ public class MainFrame extends JFrame {
             openInDesktop(dbFile.getParent());
         });
         mFile.add(miOpenDb);
+
+        JMenuItem miOpenTls = new JMenuItem(I18n.t("menu.open-tls-dir"));
+        miOpenTls.addActionListener(e ->
+                openInDesktop(com.auditlog.config.PathsUtil.configDir()
+                        .resolve(com.auditlog.util.TlsCertManager.TLS_DIR)));
+        mFile.add(miOpenTls);
 
         JMenuItem miSettings = new JMenuItem(I18n.t("menu.settings"));
         miSettings.setAccelerator(KeyStroke.getKeyStroke('S', InputEvent.CTRL_DOWN_MASK));
@@ -469,6 +476,44 @@ public class MainFrame extends JFrame {
         portSpinner.setPreferredSize(new Dimension(110, 26));
         JTextField bindField = new JTextField(config.syslogBindAddress, 12);
 
+        // ---- TLS 设置（相机转发是加密连接，需在服务器侧启用 TLS）----
+        JCheckBox tlsCheck = new JCheckBox(I18n.t("chk.tls-enabled"), config.tlsEnabled);
+        JTextField certField = new JTextField(config.tlsCertPath, 22);
+        JTextField keyField = new JTextField(config.tlsKeyPath, 22);
+        JTextField ksField = new JTextField(config.tlsKeystorePath, 22);
+        JPasswordField ksPwdField = new JPasswordField(config.tlsKeystorePassword, 22);
+        JTextField tsField = new JTextField(config.tlsTruststorePath, 22);
+        JPasswordField tsPwdField = new JPasswordField(config.tlsTruststorePassword, 22);
+        JButton certBrowse = new JButton(I18n.t("btn.browse"));
+        JButton keyBrowse = new JButton(I18n.t("btn.browse"));
+        JButton ksBrowse = new JButton(I18n.t("btn.browse"));
+        JButton tsBrowse = new JButton(I18n.t("btn.browse"));
+        certBrowse.addActionListener(e -> chooseFile(certField));
+        keyBrowse.addActionListener(e -> chooseFile(keyField));
+        ksBrowse.addActionListener(e -> chooseFile(ksField));
+        tsBrowse.addActionListener(e -> chooseFile(tsField));
+        JPanel certRow = new JPanel(new BorderLayout(4, 0));
+        certRow.add(certField, BorderLayout.CENTER);
+        certRow.add(certBrowse, BorderLayout.EAST);
+        JPanel keyRow = new JPanel(new BorderLayout(4, 0));
+        keyRow.add(keyField, BorderLayout.CENTER);
+        keyRow.add(keyBrowse, BorderLayout.EAST);
+        JPanel ksRow = new JPanel(new BorderLayout(4, 0));
+        ksRow.add(ksField, BorderLayout.CENTER);
+        ksRow.add(ksBrowse, BorderLayout.EAST);
+        JPanel tsRow = new JPanel(new BorderLayout(4, 0));
+        tsRow.add(tsField, BorderLayout.CENTER);
+        tsRow.add(tsBrowse, BorderLayout.EAST);
+
+        JComponent[] tlsFields = {certField, keyField, ksField, ksPwdField, tsField, tsPwdField,
+                certBrowse, keyBrowse, ksBrowse, tsBrowse};
+        Runnable toggleTlsFields = () -> {
+            boolean on = tlsCheck.isSelected();
+            for (JComponent c : tlsFields) c.setEnabled(on);
+        };
+        toggleTlsFields.run();
+        tlsCheck.addActionListener(e -> toggleTlsFields.run());
+
         JPanel box = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
@@ -487,6 +532,49 @@ public class MainFrame extends JFrame {
         box.add(new JLabel(I18n.t("lbl.bind.address")), gbc);
         gbc.gridx = 1;
         box.add(bindField, gbc);
+
+        // --- TLS ---
+        gbc.gridx = 0; gbc.gridy++; gbc.gridwidth = 2;
+        box.add(Box.createVerticalStrut(4), gbc);
+        gbc.gridy++;
+        box.add(new JLabel(I18n.t("dlg.settings.tls")), gbc);
+        gbc.gridy++;
+        box.add(tlsCheck, gbc);
+
+        gbc.gridwidth = 1; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.cert")), gbc);
+        gbc.gridx = 1;
+        box.add(certRow, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.key")), gbc);
+        gbc.gridx = 1;
+        box.add(keyRow, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.keystore")), gbc);
+        gbc.gridx = 1;
+        box.add(ksRow, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.keystore.password")), gbc);
+        gbc.gridx = 1;
+        box.add(ksPwdField, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.truststore")), gbc);
+        gbc.gridx = 1;
+        box.add(tsRow, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.tls.truststore.password")), gbc);
+        gbc.gridx = 1;
+        box.add(tsPwdField, gbc);
+
+        gbc.gridx = 0; gbc.gridy++; gbc.gridwidth = 2;
+        JLabel tlsHint = new JLabel(I18n.t("lbl.tls.hint"));
+        tlsHint.setForeground(UIManager.getColor("Label.disabledForeground"));
+        box.add(tlsHint, gbc);
 
         // --- 行为 ---
         gbc.gridx = 0; gbc.gridy++; gbc.gridwidth = 2;
@@ -515,19 +603,32 @@ public class MainFrame extends JFrame {
         boolean prevAutoStart = config.autoStartServer;
         int prevPort = config.syslogPort;
         String prevBind = config.syslogBindAddress;
+        boolean prevTlsEnabled = config.tlsEnabled;
+        String prevTlsConfig = config.tlsCertPath + "|" + config.tlsKeyPath + "|" + config.tlsKeystorePath
+                + "|" + config.tlsTruststorePath;
         config.autoStartServer = autoServerCheck.isSelected();
         config.autostartOnBoot = bootCheck.isSelected();
         config.minimizeToTray  = trayCheck.isSelected();
         config.syslogPort = (Integer) portSpinner.getValue();
         config.syslogBindAddress = bindField.getText().trim().isEmpty() ? "0.0.0.0" : bindField.getText().trim();
+        config.tlsEnabled = tlsCheck.isSelected();
+        config.tlsCertPath = certField.getText().trim();
+        config.tlsKeyPath = keyField.getText().trim();
+        config.tlsKeystorePath = ksField.getText().trim();
+        config.tlsKeystorePassword = new String(ksPwdField.getPassword());
+        config.tlsTruststorePath = tsField.getText().trim();
+        config.tlsTruststorePassword = new String(tsPwdField.getPassword());
         // 语言：取 SUPPORTED[selIdx][0]
         config.locale = I18n.SUPPORTED[langCombo.getSelectedIndex()][0];
 
         boolean running = ServerController.get().isRunning();
 
-        // ---- 如果端口或绑定地址变了且服务器正在运行，自动重启以应用新配置 ----
+        // ---- 端口/绑定地址/TLS 变了且服务器在运行 → 自动重启以应用新配置 ----
         boolean netChanged = config.syslogPort != prevPort || !config.syslogBindAddress.equals(prevBind);
-        if (running && netChanged) {
+        boolean tlsChanged = config.tlsEnabled != prevTlsEnabled
+                || !(config.tlsCertPath + "|" + config.tlsKeyPath + "|" + config.tlsKeystorePath
+                     + "|" + config.tlsTruststorePath).equals(prevTlsConfig);
+        if (running && (netChanged || tlsChanged)) {
             try {
                 ServerController.get().restart(config, store);
                 appendWelcomeRow("welcome.restarted");
@@ -581,6 +682,17 @@ public class MainFrame extends JFrame {
             JOptionPane.showMessageDialog(this,
                     I18n.t("dlg.settings-saved", bootState, trayState),
                     I18n.t("app.title"), JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /** 文件选择对话框，选中后把绝对路径填进目标输入框。 */
+    private void chooseFile(JTextField target) {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle(I18n.t("dlg.choose-file"));
+        String cur = target.getText().trim();
+        if (!cur.isEmpty()) fc.setSelectedFile(new File(cur));
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION && fc.getSelectedFile() != null) {
+            target.setText(fc.getSelectedFile().getAbsolutePath());
         }
     }
 

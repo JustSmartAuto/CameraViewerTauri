@@ -8,6 +8,7 @@ import com.auditlog.ui.MainFrame;
 import com.auditlog.ui.ServerController;
 import com.auditlog.ui.TrayManager;
 import com.auditlog.util.SingleInstanceLock;
+import com.auditlog.util.TlsCertManager;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatIntelliJLaf;
 import com.formdev.flatlaf.FlatLaf;
@@ -44,6 +45,19 @@ public final class AuditLogApp {
         // (or %APPDATA%\CognexLoggingServer\config\app.properties if D: absent).
         Path cfgPath = PathsUtil.configFile();
         AppConfig cfg = AppConfig.load(cfgPath);
+
+        // ---- TLS 证书：首次启动自动在 config/tls 下生成 CA 公钥/私钥与服务器证书（PEM，无口令）----
+        try {
+            TlsCertManager.Paths tls = TlsCertManager.ensure(PathsUtil.configDir());
+            if (cfg.tlsCertPath.isBlank() || cfg.tlsKeyPath.isBlank()) {
+                cfg.tlsCertPath = tls.serverCert().toString();
+                cfg.tlsKeyPath = tls.serverKey().toString();
+                cfg.save(cfgPath);
+            }
+            log.info("相机端需导入的 CA 公钥: {}", tls.caCert());
+        } catch (Exception e) {
+            log.warn("生成/加载 TLS 证书失败: {}", e.getMessage());
+        }
 
         // --- Locale: honour saved preference before any UI is built ---
         I18n.setLocale(cfg.asLocale());
