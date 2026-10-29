@@ -13,6 +13,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>ntp.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -36,9 +37,12 @@
     <None Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\ntp-4.2.4p8@lennon-o-lpv-win32-setup.exe">
+    <EmbeddedResource Include="..\..\installer\ntp-4.2.4p8-lennon-o-lpv-win32-setup.exe">
       <Link>Resources\NtpInstaller.exe</Link>
       <LogicalName>NtpSetupHelper.NtpInstaller.exe</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ntp.ico">
+      <LogicalName>NtpSetupHelper.ntp.ico</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

@@ -33,17 +33,14 @@ namespace NtpSetupHelper
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NTP")
         };
 
+        // 内网专用配置：以本机时钟为唯一时间源（无外网依赖），对外授时
         private const string NtpConfContent =
             "restrict 127.0.0.1\r\n" +
             "restrict -6 ::1\r\n" +
+            "restrict 0.0.0.0 mask 0.0.0.0 nomodify notrap\r\n" +
             "driftfile \"C:\\Program Files (x86)\\NTP\\etc\\ntp.drift\"\r\n" +
             "server 127.127.1.0\r\n" +
-            "fudge 127.127.1.0 stratum 12\r\n" +
-            "server 0.pool.ntp.org iburst minpoll 6 maxpoll 7\r\n" +
-            "server 1.pool.ntp.org iburst minpoll 6 maxpoll 7\r\n" +
-            "server 2.pool.ntp.org iburst minpoll 6 maxpoll 7\r\n" +
-            "server 3.pool.ntp.org iburst minpoll 6 maxpoll 7\r\n" +
-            "server pool.ntp.org iburst minpoll 6 maxpoll 7\r\n";
+            "fudge 127.127.1.0 stratum 10\r\n";
 
         private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "NtpSetupHelper.log");
 
@@ -56,6 +53,7 @@ namespace NtpSetupHelper
         public MainForm()
         {
             Text = "NTP 服务器一键设置工具 (静默安装/配置/测试)";
+            Icon = LoadEmbeddedIcon();
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(680, 480);
             MinimumSize = new Size(680, 480);
@@ -93,11 +91,31 @@ namespace NtpSetupHelper
             try { File.AppendAllText(LogFile, "[" + DateTime.Now.ToString("HH:mm:ss") + "] " + msg + Environment.NewLine); } catch { }
         }
 
+        private static Icon LoadEmbeddedIcon()
+        {
+            try
+            {
+                using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream("NtpSetupHelper.ntp.ico"))
+                    return s == null ? null : new Icon(s);
+            }
+            catch { return null; }
+        }
+
         private void Log(string msg)
         {
             FileLog(msg);
             if (IsDisposed) return;
-            if (InvokeRequired) { try { Invoke(new Action(() => Log(msg))); } catch { } return; }
+            if (InvokeRequired)
+            {
+                try { Invoke(new Action<string>(AppendUi), msg); } catch { }
+                return;
+            }
+            AppendUi(msg);
+        }
+
+        private void AppendUi(string msg)
+        {
+            if (IsDisposed) return;
             _log.AppendText("[" + DateTime.Now.ToString("HH:mm:ss") + "] " + msg + Environment.NewLine);
         }
 
@@ -122,17 +140,23 @@ namespace NtpSetupHelper
         }
 
         // 启动后自动流程：已配置则跳过安装并直接测试；未配置则全自动安装配置
+        // 启动后自动流程：配置一致则跳过并测试；否则自动重新配置（无弹框）
         private async Task AutoFlowAsync()
         {
             Log("程序已启动（管理员权限）。");
             string installDir = FindNtpInstallDir();
-            bool configured = installDir != null && IsServiceInstalled() &&
-                              File.Exists(Path.Combine(installDir, "etc", "ntp.conf"));
+            string confPath = installDir == null ? null : Path.Combine(installDir, "etc", "ntp.conf");
+            bool configured = confPath != null && IsServiceInstalled() && File.Exists(confPath);
             if (configured)
             {
-                Log("检测到系统已配置 NTP 服务器，跳过安装。如需重新配置请点击 [一键设置 / 重新配置] 按钮。");
-                await TestNtpTimeAsync();
-                return;
+                string existing = File.ReadAllText(confPath).Trim();
+                if (existing == NtpConfContent.Trim())
+                {
+                    Log("检测到 NTP 服务器配置与目标配置一致，跳过安装配置。");
+                    await TestNtpTimeAsync();
+                    return;
+                }
+                Log("检测到已有配置但与目标配置不一致，自动重新配置。");
             }
             await RunSetupFlowAsync(false);
             await TestNtpTimeAsync();
@@ -323,17 +347,19 @@ namespace NtpSetupHelper
                 Log("等待 NTP 服务就绪，然后向 127.0.0.1:123 发送查询...");
                 DateTime ntpTime = await Task.Run(() =>
                 {
-                    // 轮询等待服务响应，最多 60 秒
-                    for (int i = 0; i < 12; i++)
+                    // 轮询等待服务完成同步，最多 5 分钟（ntpd 初次同步通常需要数分钟）
+                    for (int i = 0; i < 60; i++)
                     {
                         try { return QueryNtp("127.0.0.1"); }
                         catch (Exception ex)
                         {
+                            if (i < 5 || (i + 1) % 12 == 0)
+                                Log("第 " + (i + 1) + " 次查询未就绪: " + ex.Message);
                             FileLog("第 " + (i + 1) + " 次查询失败: " + ex.Message);
                             Thread.Sleep(5000);
                         }
                     }
-                    throw new Exception("NTP 服务器未响应（127.0.0.1:123）。");
+                    throw new Exception("NTP 服务器 5 分钟内未同步完成（127.0.0.1:123）。");
                 });
                 TimeSpan offset = ntpTime.ToUniversalTime() - DateTime.UtcNow;
                 Log("NTP 服务器时间(UTC): " + ntpTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss"));
