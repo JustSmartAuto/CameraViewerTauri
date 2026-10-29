@@ -26,7 +26,8 @@ Write-Host "    stamp:  $Stamp"
 New-Item -ItemType Directory -Force -Path $Payload, $OutDir | Out-Null
 
 # ---- 1. Find Gradle fat jar ----
-$FatJar = Get-ChildItem "$Root\audit-log-server-*-fat.jar" |
+$FatJar = Get-ChildItem "$Root\audit-log-server-*-fat*.jar" |
+  Where-Object { $_.Name -notlike "*sources*" -and $_.Name -notlike "*javadoc*" } |
   Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $FatJar) { throw "fat jar not found. Run build-with-timestamp.ps1 first." }
 Write-Host "==> fat jar: $($FatJar.FullName)" -ForegroundColor Green

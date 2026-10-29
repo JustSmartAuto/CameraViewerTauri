@@ -44,10 +44,7 @@ public class MainFrame extends JFrame {
     private final JCheckBox autoScroll = new JCheckBox(I18n.t("chk.auto-scroll"), true);
     private final JButton refreshBtn = new JButton(I18n.t("btn.refresh"));
     private final JButton startStopBtn = new JButton(I18n.t("btn.start"));
-    private final JButton exportBtn = new JButton(I18n.t("btn.export"));
-    private final JButton pruneBtn = new JButton(I18n.t("btn.prune"));
     private final JButton settingsBtn = new JButton(I18n.t("btn.settings"));
-    private final JSpinner pruneKeep = new JSpinner(new SpinnerNumberModel(100_000, 1000, 10_000_000, 1000));
 
     public MainFrame(AppConfig config, H2Store store, Path configFile) {
         super(I18n.t("app.title"));
@@ -91,8 +88,6 @@ public class MainFrame extends JFrame {
 
         startStopBtn.addActionListener(e -> onStartStop());
         refreshBtn.addActionListener(e -> refreshData());
-        exportBtn.addActionListener(e -> onExportJson());
-        pruneBtn.addActionListener(e -> onPrune());
         settingsBtn.addActionListener(e -> onOpenSettings());
 
         top.add(startStopBtn);
@@ -113,12 +108,7 @@ public class MainFrame extends JFrame {
         top.add(Box.createHorizontalGlue());
         top.add(countLabel);
         top.add(Box.createHorizontalStrut(12));
-        top.add(new JLabel(I18n.t("lbl.keep.rows")));
-        top.add(pruneKeep);
-        top.add(pruneBtn);
-        top.add(Box.createHorizontalStrut(8));
         top.add(settingsBtn);
-        top.add(exportBtn);
 
         table.setAutoCreateRowSorter(true);
         table.setRowHeight(22);
@@ -181,6 +171,10 @@ public class MainFrame extends JFrame {
         miSettings.addActionListener(e -> onOpenSettings());
         mFile.add(miSettings);
 
+        JMenuItem miExport = new JMenuItem(I18n.t("menu.export"));
+        miExport.addActionListener(e -> onExportJson());
+        mFile.add(miExport);
+
         mFile.addSeparator();
 
         JMenuItem miExit = new JMenuItem(I18n.t("menu.exit"));
@@ -194,6 +188,16 @@ public class MainFrame extends JFrame {
         mFile.add(miExit);
 
         bar.add(mFile);
+
+        // ---- 维护菜单（数据库维护类危险操作集中在此） ----
+        JMenu mMaintenance = new JMenu(I18n.t("menu.maintenance"));
+        mMaintenance.setMnemonic(I18n.t("menu.maintenance.mnemonic").charAt(0));
+
+        JMenuItem miPrune = new JMenuItem(I18n.t("menu.prune"));
+        miPrune.addActionListener(e -> onPruneDialog());
+        mMaintenance.add(miPrune);
+
+        bar.add(mMaintenance);
 
         JMenu mHelp = new JMenu(I18n.t("menu.help"));
         mHelp.setMnemonic(I18n.t("menu.help.mnemonic").charAt(0));
@@ -226,7 +230,14 @@ public class MainFrame extends JFrame {
     private void onStartStop() {
         var controller = ServerController.get();
         if (controller.isRunning()) {
-            // Already running → 重启（stop + start）而不是直接 stop
+            // 已运行 → 重启：二次确认防误触
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    I18n.t("dlg.restart-confirm"),
+                    I18n.t("dlg.warning"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (confirm != JOptionPane.YES_OPTION) return;
+
             try {
                 controller.restart(config, store);
                 appendWelcomeRow("welcome.restarted");
@@ -328,8 +339,56 @@ public class MainFrame extends JFrame {
                 I18n.t("dlg.info"), JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private void onPrune() {
-        int keep = (Integer) pruneKeep.getValue();
+    /** 从维护菜单进入：一体化弹窗（输入保留行数 → 预览将删多少 → 二次确认 → 执行）。 */
+    private void onPruneDialog() {
+        long total;
+        try {
+            total = store.totalCount();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.prune-fail", e.getMessage()),
+                    I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 构建弹窗：警告说明 + 输入保留行数
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        JTextArea warn = new JTextArea(I18n.t("dlg.prune-dialog-warn", total));
+        warn.setEditable(false);
+        warn.setLineWrap(true);
+        warn.setWrapStyleWord(true);
+        warn.setForeground(new Color(180, 50, 50));
+        warn.setBackground(panel.getBackground());
+        panel.add(warn, BorderLayout.NORTH);
+
+        JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        inputRow.add(new JLabel(I18n.t("lbl.keep.rows")));
+        JSpinner keepSpinner = new JSpinner(
+                new SpinnerNumberModel((int) Math.min(total, 100_000), 1000, 10_000_000, 1000));
+        inputRow.add(keepSpinner);
+        panel.add(inputRow, BorderLayout.CENTER);
+
+        int choice = JOptionPane.showConfirmDialog(this, panel,
+                I18n.t("menu.prune"),
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) return;
+
+        int keep = (Integer) keepSpinner.getValue();
+        long willDelete = Math.max(0, total - keep);
+        if (willDelete == 0) {
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.prune-nothing", total),
+                    I18n.t("dlg.info"), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // 二次确认（明确告知风险 + 具体数字）
+        int confirm = JOptionPane.showConfirmDialog(this,
+                I18n.t("dlg.prune-confirm", willDelete, keep, total),
+                I18n.t("dlg.warning"),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) return;
+
         try {
             int removed = store.prune(keep);
             refreshData();
@@ -450,8 +509,6 @@ public class MainFrame extends JFrame {
         setTitle(I18n.t("app.title"));
         refreshStartStopButton();
         refreshBtn.setText(I18n.t("btn.refresh"));
-        exportBtn.setText(I18n.t("btn.export"));
-        pruneBtn.setText(I18n.t("btn.prune"));
         settingsBtn.setText(I18n.t("btn.settings"));
         autoScroll.setText(I18n.t("chk.auto-scroll"));
 
