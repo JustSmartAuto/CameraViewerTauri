@@ -40,6 +40,7 @@ public final class AppShutdown {
     private static volatile SingleInstanceLock lock;
     private static volatile H2Store store;
     private static volatile TrayManager tray;
+    private static volatile com.auditlog.camera.CameraPoller cameraPoller;
     private static boolean hookInstalled;
 
     private AppShutdown() {}
@@ -56,6 +57,8 @@ public final class AppShutdown {
     public static void setStore(H2Store h2Store) { store = h2Store; }
 
     public static void setTray(TrayManager trayManager) { tray = trayManager; }
+
+    public static void setCameraPoller(com.auditlog.camera.CameraPoller poller) { cameraPoller = poller; }
 
     /** 是否已经进入退出流程（用于忽略重复的关闭请求）。 */
     public static boolean isExitRequested() { return exitRequested.get(); }
@@ -82,6 +85,18 @@ public final class AppShutdown {
     private static void cleanup() {
         if (!cleaned.compareAndSet(false, true)) return;
         try {
+            // 先停相机轮询，避免清理过程中还有线程往队列里塞日志
+            com.auditlog.camera.CameraPoller cp = cameraPoller;
+            cameraPoller = null;
+            if (cp != null) {
+                try {
+                    cp.stop();
+                    log.info("camera poller stopped");
+                } catch (Exception e) {
+                    log.warn("stop camera poller failed: {}", e.getMessage());
+                }
+            }
+
             try {
                 ServerController.get().stopAndFlush();
                 log.info("server stopped, inbound queue flushed");

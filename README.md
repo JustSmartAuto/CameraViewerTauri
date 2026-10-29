@@ -1,6 +1,6 @@
 # Audit Log Server for Cognex In-Sight
 
-Cognex In-Sight Vision Systems 审计日志集中存储与可视化服务器。一个 Java 25 单 jar 可执行程序，监听 TCP 5140 端口（Fluentd 默认转发端口），同时提供现代化 Swing 桌面界面浏览和筛选多台相机的审计日志。
+Cognex In-Sight Vision Systems 审计日志集中存储与可视化服务器。一个 Java 25 单 jar 可执行程序，监听 TCP 5140 端口（Fluentd 默认转发端口），也可主动拉取相机的 Platform API，同时提供现代化 Swing 桌面界面浏览和筛选多台相机的审计日志。
 
 同时提供 **.NET Framework 4.8 便携 Launcher**（Costura.Fody 单文件 EXE，内嵌 JRE 25 + fat jar），双击即可运行，Win10 工控机零外部依赖。
 
@@ -9,9 +9,10 @@ Cognex In-Sight Vision Systems 审计日志集中存储与可视化服务器。�
 ## 特性
 
 - 📡 **多相机客户端监听** — RFC 5424 Syslog TCP 服务（默认端口 5140），支持 Fluentd `octet-count framing` 和 `NL framing` 两种帧格式
-- 🔐 **可选 TLS/SSL** — 在 `app.properties` 中启用，加载 PKCS12 证书链后支持相机客户端双向认证
+- 🔐 **TLS/SSL 默认启用** — 相机默认用 TLS 转发；首次启动自动在 `config/tls/` 生成 CA 与服务器证书（无口令 PEM），也支持 PKCS12 密钥库与客户端证书双向认证
+- 📡 **相机主动拉取** — 通过 Platform API `/api/audit-log`（admin / 空密码）定时拉取，相机端零配置
 - 💾 **H2 内嵌存储** — 文件模式持久化，带时间戳/主机/严重级索引，自增主键
-- 🖥️ **FlatLaf 现代化 UI** — 过滤（主机 + 严重级）、分页、自动滚动、严重级色彩渲染、一键导出 JSON / 裁剪旧行
+- 🖥️ **FlatLaf 现代化 UI** — 过滤（主机 + 严重级）、分页、自动滚动、严重级色彩渲染、右键复制、一键导出 JSON / 裁剪旧行
 - 🧵 **虚拟线程高并发** — Java 25 `Executors.newVirtualThreadPerTaskExecutor()`，一台 PC 同时处理数十台相机连接无压力
 - 📦 **Fat Jar 单文件分发** — 所有依赖打入一个 jar，Windows / Linux 直接 `java -jar` 运行
 - 🚀 **便携 Launcher 单文件 EXE** — net48 + Costura.Fody merge DLL + 内嵌 jlink 精简 JRE 25，Win10 LTSC 原生支持，双击即跑
@@ -86,20 +87,49 @@ java -jar audit-log-server-*.jar --autostart   # 启动即自动打开服务器
 
 ```properties
 # Syslog / TLS
+# 相机默认用 TLS 转发，故默认开启
 syslog.port=5140
-syslog.tls.enabled=false
+syslog.tls.enabled=true
 syslog.tls.keystore=./certs/server.p12
 syslog.tls.keystore.password=changeit
 syslog.tls.truststore=./certs/client-trust.p12
 syslog.tls.truststore.password=changeit
+# 首次启动自动生成的无口令 PEM（见 3.1），留空则自动填入
+syslog.tls.cert=
+syslog.tls.key=
 
 # H2 Database (file mode)
 h2.db.path=./auditlog/auditlog
 
 # UI
 ui.max.rows=100000
-ui.theme=FlatIntelliJLaf   # FlatIntelliJLaf / FlatDarkLaf / FlatLightLaf
+ui.theme=FlatIntelliJLaf   # FlatIntelliJLaf / FlatDarkLaf / FlatLaf
 ```
+
+> 相机列表不写在 `app.properties`，而是独立保存在配置目录的 `cameras.json`（由「相机管理」对话框维护）。
+
+### 3.1 TLS 证书（自动生成）
+
+首次启动会在配置目录的 `tls\` 下自动生成以下无口令 PEM（已存在则不覆盖，删除 `tls` 目录重启即可重签）：
+
+| 文件 | 用途 |
+| --- | --- |
+| `ca-cert.pem` | CA 公钥 —— 导入相机的「CA 公钥」 |
+| `ca-key.pem` | CA 私钥（服务器留存） |
+| `server-cert.pem` | 服务器证书链（服务器证书 + CA） |
+| `server-key.pem` | 服务器私钥（PKCS#8 PEM） |
+
+生成后会自动把 `syslog.tls.cert` / `syslog.tls.key` 写进 `app.properties` 指向服务器证书/私钥。也可改用 `syslog.tls.keystore` 指定的 PKCS#12 密钥库；若相机要求客户端证书，再配置 truststore 即可。证书 SAN 写入本机全部 IPv4 地址，若更换工控机 IP，请删除 `tls` 目录重新生成。
+
+### 3.2 相机（Platform API 主动拉取）
+
+除了让相机推送 syslog，本软件也能主动拉取审计日志——**相机端无需任何配置（含 TLS）**：
+
+- 接口：`GET http://<相机IP>/api/audit-log`，Basic 认证，默认 `admin` / 空密码；带 `?after=<ISO时间>` 增量拉取
+- 菜单「相机 → 相机管理…」添加相机：名称、IP、端口（默认 80）、用户名、密码、拉取间隔（默认 30 秒）
+- 首次添加会拉取该相机全部历史事件，之后只取 `after` 之后的新事件，避免重复入库
+- 相机列表保存在配置目录的 `cameras.json`（含上次同步时间），可手工编辑
+- 拉取到的日志与 syslog 推送的日志进入同一张表，来源 IP 记为相机地址
 
 ### 4. Cognex In-Sight 端配置
 
@@ -108,7 +138,8 @@ ui.theme=FlatIntelliJLaf   # FlatIntelliJLaf / FlatDarkLaf / FlatLightLaf
 1. In-Sight Vision Suite → **Utilities → Audit Logging**
 2. 勾选 **Enable Forwarding**
 3. IP 填写运行本服务的 PC 地址，**端口 5140**（或 `app.properties` 里修改的端口）
-4. OK → 相机审计事件立即开始流入
+4. 在相机的证书管理中导入本服务生成的 `ca-cert.pem`（无口令 PEM 格式的 CA 公钥）
+5. OK → 相机审计事件立即开始流入
 
 建议同步在 In-Sight 中配置 **NTP Server**，否则相机时间戳会以本地时间上报。
 
@@ -138,11 +169,17 @@ FluentdLoggingServer/
 │   ├── db/
 │   │   ├── H2Store.java               # H2 内嵌存储（schema / insert / query / prune）
 │   │   └── AuditRow.java              # UI 行 record
+│   ├── camera/CameraConfig.java       # 单台相机（名称/IP/凭据/间隔/上次同步）
+│   ├── camera/CameraClient.java       # /api/audit-log 拉取并把事件转成 SyslogMessage
+│   ├── camera/CameraStore.java        # cameras.json 读写
+│   ├── camera/CameraPoller.java       # 定时增量轮询（after= 参数去重）
 │   ├── util/SingleInstanceLock.java   # 跨进程 FileLock（audit-log-server.lock）
+│   ├── util/TlsCertManager.java       # 首次启动自签 CA + 服务器证书（纯 JDK DER，输出无口令 PEM）
 │   └── ui/
 │       ├── MainFrame.java             # Swing 主窗体（FlatLaf + 过滤 + 菜单维护 + 危险操作二次确认）
 │       ├── TrayManager.java           # 系统托盘（强制英文防 Win10 HWND 乱码）
 │       ├── ServerController.java      # Server ↔ DB ↔ UI 粘合层
+│       ├── CameraDialog.java          # 相机管理对话框（增删改 / 测试连接 / 立即同步）
 │       └── WinAutostart.java          # HKCU Run 注册表开机自启
 │
 ├── src/main/resources/
@@ -163,6 +200,14 @@ FluentdLoggingServer/
 ├── LICENSE
 └── README.md
 ```
+
+## 界面速览
+
+- **顶部工具栏**：开始/重启服务器、主机过滤、严重级区间、刷新、自动滚动、设置
+- **日志表格**：表头可排序；右键行出菜单「复制消息 / 复制整行」，`Ctrl+C` 复制整行（制表符分隔，可直接粘进 Excel）
+- **菜单**：文件（打开配置/数据库/TLS 证书目录、设置、导出 JSON、退出）、维护（清理旧数据）、相机（相机管理）、帮助（关于）
+- **关闭窗口**：弹「最小化到托盘 / 退出程序 / 取消」，默认最小化；选退出后会等队列落库、H2 SHUTDOWN、释放单实例锁，再结束进程，不会残留隐藏进程
+- **托盘菜单**（英文）：Show / Hide / Exit
 
 ## 数据库 Schema
 

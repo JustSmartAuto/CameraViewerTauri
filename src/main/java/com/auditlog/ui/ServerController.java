@@ -39,10 +39,29 @@ public class ServerController {
     private H2Store store;
     private final Gson gson = new Gson();
     private final java.util.concurrent.ConcurrentLinkedQueue<SyslogMessage> inbound = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private volatile boolean shuttingDown;
 
     public void bindFrame(MainFrame frame, H2Store store) {
         this.frame = frame;
         this.store = store;
+    }
+
+    /**
+     * 相机拉取的审计日志走与 syslog 完全相同的入库 + 界面刷新链路。
+     * 若服务器未启动（没有定时写库线程），这里按需拉起一个。
+     */
+    public void ingest(SyslogMessage m) {
+        if (m == null) return;
+        ensurePusher();
+        inbound.offer(m);
+    }
+
+    private synchronized void ensurePusher() {
+        if (shuttingDown) return;
+        if (livePusher == null || livePusher.isShutdown()) {
+            livePusher = Executors.newSingleThreadScheduledExecutor();
+            livePusher.scheduleAtFixedRate(this::flushInbound, 250, 250, TimeUnit.MILLISECONDS);
+        }
     }
 
     public synchronized void start(AppConfig config, H2Store store) throws Exception {
@@ -69,6 +88,7 @@ public class ServerController {
      * 全部落库。必须在 {@code store.close()} 之前调用，否则退出时丢日志。
      */
     public synchronized void stopAndFlush() {
+        shuttingDown = true;
         SyslogServer s = server.getAndSet(null);
         if (s != null) s.stop();
         stopPusher(5);

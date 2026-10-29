@@ -17,7 +17,8 @@ public class AppConfig {
     public int syslogPort = 5140;
     /** Bind address. 0.0.0.0 = all IPv4 interfaces (default), 127.0.0.1 = loopback only. */
     public String syslogBindAddress = "0.0.0.0";
-    public boolean tlsEnabled = false;
+    /** 相机默认就用 TLS 转发，因此默认开启；证书由 TlsCertManager 首次启动时自动生成。 */
+    public boolean tlsEnabled = true;
     /** PKCS#12 密钥库（.p12/.pfx）。与下面的 PEM 证书+私钥二选一，PEM 优先。 */
     public String tlsKeystorePath = "";
     public String tlsKeystorePassword = "";

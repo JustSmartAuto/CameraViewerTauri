@@ -1,6 +1,9 @@
 package com.auditlog.ui;
 
 import com.auditlog.AppShutdown;
+import com.auditlog.camera.CameraConfig;
+import com.auditlog.camera.CameraPoller;
+import com.auditlog.camera.CameraStore;
 import com.auditlog.config.AppConfig;
 import com.auditlog.db.AuditRow;
 import com.auditlog.db.H2Store;
@@ -10,7 +13,11 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -30,11 +37,18 @@ public class MainFrame extends JFrame {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneId.systemDefault());
+    /** 消息列的模型索引（与 {@link LogTableModel} 的列顺序一致）。 */
+    private static final int MSG_COLUMN = 6;
 
     private final AppConfig config;
     private final H2Store store;
     private final Path configFile;    // where to save()
     private TrayManager trayManager;   // set externally after construction
+
+    // 相机拉取（Platform API /api/audit-log）所需上下文，由 AuditLogApp 注入
+    private CameraStore cameraStore;
+    private CameraPoller cameraPoller;
+    private java.util.List<CameraConfig> cameras;
 
     private final LogTableModel model = new LogTableModel();
     private final JTable table = new JTable(model);
@@ -70,6 +84,13 @@ public class MainFrame extends JFrame {
         buildUi();
         refreshHosts();
         refreshData();
+    }
+
+    /** 注入相机上下文，供「相机管理」菜单打开对话框。 */
+    public void setCameraContext(CameraStore store, CameraPoller poller, java.util.List<CameraConfig> cameras) {
+        this.cameraStore = store;
+        this.cameraPoller = poller;
+        this.cameras = cameras;
     }
 
     public void setTrayManager(TrayManager tm) {
@@ -158,6 +179,31 @@ public class MainFrame extends JFrame {
         table.getColumnModel().getColumn(7).setPreferredWidth(600);
         table.setDefaultRenderer(Object.class, new SevRenderer());
 
+        // ---- 右键菜单：复制消息 / 复制整行（Ctrl+C 复制整行）----
+        JPopupMenu tableMenu = new JPopupMenu();
+        JMenuItem miCopyMsg = new JMenuItem(I18n.t("menu.copy.message"));
+        miCopyMsg.addActionListener(e -> copySelection(true));
+        tableMenu.add(miCopyMsg);
+        JMenuItem miCopyRow = new JMenuItem(I18n.t("menu.copy.row"));
+        miCopyRow.addActionListener(e -> copySelection(false));
+        tableMenu.add(miCopyRow);
+
+        table.addMouseListener(new MouseAdapter() {
+            private void maybeShow(MouseEvent e) {
+                if (!e.isPopupTrigger()) return;
+                int row = table.rowAtPoint(e.getPoint());
+                if (row >= 0) table.setRowSelectionInterval(row, row);
+                else table.clearSelection();
+                tableMenu.show(table, e.getX(), e.getY());
+            }
+            @Override public void mousePressed(MouseEvent e) { maybeShow(e); }
+            @Override public void mouseReleased(MouseEvent e) { maybeShow(e); }
+        });
+        table.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("ctrl C"), "copyRow");
+        table.getActionMap().put("copyRow", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { copySelection(false); }
+        });
+
         JScrollPane scroll = new JScrollPane(table, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
@@ -237,6 +283,19 @@ public class MainFrame extends JFrame {
         mMaintenance.add(miPrune);
 
         bar.add(mMaintenance);
+
+        // ---- 相机菜单：通过 Platform API /api/audit-log 拉取日志，无需相机配置转发 ----
+        JMenu mCameras = new JMenu(I18n.t("menu.cameras"));
+        mCameras.setMnemonic(I18n.t("menu.cameras.mnemonic").charAt(0));
+        JMenuItem miCamManage = new JMenuItem(I18n.t("menu.cameras.manage"));
+        miCamManage.addActionListener(e -> {
+            if (cameraStore == null) return;
+            CameraDialog.show(this, cameraStore, cameraPoller, cameras);
+            refreshHosts();
+            refreshData();
+        });
+        mCameras.add(miCamManage);
+        bar.add(mCameras);
 
         JMenu mHelp = new JMenu(I18n.t("menu.help"));
         mHelp.setMnemonic(I18n.t("menu.help.mnemonic").charAt(0));
@@ -682,6 +741,32 @@ public class MainFrame extends JFrame {
             JOptionPane.showMessageDialog(this,
                     I18n.t("dlg.settings-saved", bootState, trayState),
                     I18n.t("app.title"), JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * 把当前选中行复制到系统剪贴板：{@code messageOnly=true} 只复制消息列，
+     * 否则复制整行（各列以制表符分隔，便于粘进 Excel）。
+     */
+    private void copySelection(boolean messageOnly) {
+        int row = table.getSelectedRow();
+        if (row < 0) return;
+        StringBuilder sb = new StringBuilder();
+        if (messageOnly) {
+            Object v = table.getValueAt(row, MSG_COLUMN);
+            if (v != null) sb.append(v);
+        } else {
+            for (int c = 0; c < table.getColumnCount(); c++) {
+                if (c > 0) sb.append('\t');
+                Object v = table.getValueAt(row, c);
+                if (v != null) sb.append(v);
+            }
+        }
+        if (sb.length() == 0) return;
+        try {
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(sb.toString()), null);
+        } catch (Exception ignored) {
+            // 剪贴板被其它程序占用时忽略
         }
     }
 

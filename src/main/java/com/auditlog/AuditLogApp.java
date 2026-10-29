@@ -1,5 +1,8 @@
 package com.auditlog;
 
+import com.auditlog.camera.CameraConfig;
+import com.auditlog.camera.CameraPoller;
+import com.auditlog.camera.CameraStore;
 import com.auditlog.config.AppConfig;
 import com.auditlog.config.PathsUtil;
 import com.auditlog.db.H2Store;
@@ -104,6 +107,15 @@ public final class AuditLogApp {
         TrayManager tray = new TrayManager(frame, cfg, icon);
         frame.setTrayManager(tray);
         tray.install();
+
+        // ---- 相机：定时拉取 Platform API /api/audit-log（无需相机端配置 TLS 转发）----
+        CameraStore camStore = new CameraStore(PathsUtil.configDir().resolve("cameras.json"));
+        java.util.List<CameraConfig> cams = camStore.load();
+        CameraPoller camPoller = new CameraPoller(camStore);
+        camPoller.start(cams, ServerController.get()::ingest);
+        frame.setCameraContext(camStore, camPoller, cams);
+        AppShutdown.setCameraPoller(camPoller);
+        if (!cams.isEmpty()) log.info("已加载 {} 台相机，定时拉取审计日志", cams.size());
         AppShutdown.setTray(tray);
 
         // Auto-start server if either:
