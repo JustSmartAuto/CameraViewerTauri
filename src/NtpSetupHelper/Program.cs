@@ -344,7 +344,10 @@ namespace NtpSetupHelper
             SetRunning(true);
             try
             {
-                Log("等待 NTP 服务就绪，然后向 127.0.0.1:123 发送查询...");
+                Log("NTP 工作原理：客户端向服务器 UDP 123 端口发送时间查询包，服务器从应答包的");
+                Log("  发送/接收时间戳计算本机与服务器的时间偏差；ntpd 刚重启时需要先完成初始");
+                Log("  同步（通常 1~5 分钟），此期间应答 stratum=0，属正常现象，本工具会自动等待。");
+                Log("等待 NTP 服务就绪，然后向 127.0.0.1:123 发送查询（最多等待 5 分钟）...");
                 DateTime ntpTime = await Task.Run(() =>
                 {
                     // 轮询等待服务完成同步，最多 5 分钟（ntpd 初次同步通常需要数分钟）
@@ -353,13 +356,18 @@ namespace NtpSetupHelper
                         try { return QueryNtp("127.0.0.1"); }
                         catch (Exception ex)
                         {
+                            // 区分两种未就绪原因：服务已应答但同步中（stratum=0），或端口无应答
+                            bool answeredButNotSynced = ex.Message.IndexOf("未返回有效时间", StringComparison.Ordinal) >= 0;
+                            string state = answeredButNotSynced
+                                ? "服务已应答，尚未完成同步（stratum=0，同步中），继续等待"
+                                : "服务无应答（" + ex.Message + "）";
                             if (i < 5 || (i + 1) % 12 == 0)
-                                Log("第 " + (i + 1) + " 次查询未就绪: " + ex.Message);
-                            FileLog("第 " + (i + 1) + " 次查询失败: " + ex.Message);
+                                Log("第 " + (i + 1) + " 次查询: " + state);
+                            FileLog("第 " + (i + 1) + " 次查询: " + state);
                             Thread.Sleep(5000);
                         }
                     }
-                    throw new Exception("NTP 服务器 5 分钟内未同步完成（127.0.0.1:123）。");
+                    throw new Exception("NTP 服务器 5 分钟内未就绪（127.0.0.1:123）。可能原因：ntpd 同步异常、UDP 123 端口被防火墙拦截，请查看 %TEMP%\\NtpSetupHelper.log 并用 ntpq -p 检查。");
                 });
                 TimeSpan offset = ntpTime.ToUniversalTime() - DateTime.UtcNow;
                 Log("NTP 服务器时间(UTC): " + ntpTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss"));
