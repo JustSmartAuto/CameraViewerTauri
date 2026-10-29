@@ -4,13 +4,20 @@ import com.auditlog.config.AppConfig;
 import com.auditlog.db.H2Store;
 import com.auditlog.ui.MainFrame;
 import com.auditlog.ui.ServerController;
+import com.auditlog.ui.TrayManager;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatIntelliJLaf;
 import com.formdev.flatlaf.FlatLaf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
 
 /** Application entry point. */
@@ -30,6 +37,9 @@ public final class AuditLogApp {
             default -> FlatLaf.setup(new FlatIntelliJLaf());
         }
 
+        // Load icon (packed inside the jar / available from root dir while in IDE)
+        Image icon = loadIcon();
+
         // Open H2
         H2Store store;
         try {
@@ -41,26 +51,117 @@ public final class AuditLogApp {
             return;
         }
 
-        // Frame
         try {
             UIManager.setLookAndFeel(UIManager.getLookAndFeel());
         } catch (Exception ignored) {}
 
-        MainFrame frame = new MainFrame(cfg, store);
+        MainFrame frame = new MainFrame(cfg, store, cfgPath);
+        if (icon != null) {
+            frame.setIconImage(icon);
+            // Also update JVM default so child dialogs inherit the same icon
+            try {
+                Taskbar.getTaskbar().setIconImage(icon);
+            } catch (UnsupportedOperationException ignored) {}
+        }
         ServerController.get().bindFrame(frame, store);
 
-        // Auto-start server if asked
+        // Tray
+        TrayManager tray = new TrayManager(frame, cfg, icon);
+        frame.setTrayManager(tray);
+        tray.install();
+
+        // Auto-start server if asked (--autostart passed by WinAutostart / the tray menu)
         if (args.length > 0 && "--autostart".equals(args[0])) {
             try { ServerController.get().start(cfg, store); }
             catch (Exception e) { log.warn("autostart failed: {}", e.getMessage()); }
         }
 
-        SwingUtilities.invokeLater(() -> frame.setVisible(true));
+        SwingUtilities.invokeLater(tray::showAccordingToPreference);
 
         // Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try { ServerController.get().stop(); store.close(); } catch (Exception ignored) {}
+            try {
+                tray.uninstall();
+                ServerController.get().stop();
+                store.close();
+            } catch (Exception ignored) {}
         }, "auditlog-shutdown"));
+    }
+
+    /** Try icon from the packaged resource first, fall back to a root-dir file. */
+    private static Image loadIcon() {
+        // PNG (converted from data.ico) — JDK handles natively.
+        // ICO fallback: extractor supports classic BMP-in-ICO and modern PNG-in-ICO.
+        String[] candidates = {"/data.png", "data.png", "/data.ico", "data.ico"};
+        byte[] bytes = null;
+        for (String loc : candidates) {
+            try (InputStream in = AuditLogApp.class.getResourceAsStream(loc)) {
+                if (in != null) { bytes = in.readAllBytes(); break; }
+            } catch (Exception ignored) {}
+            try {
+                var p = Path.of(loc);
+                if (java.nio.file.Files.exists(p)) { bytes = java.nio.file.Files.readAllBytes(p); break; }
+            } catch (Exception ignored) {}
+        }
+        if (bytes == null) {
+            log.warn("data.png / data.ico not found — icon will be OS default");
+            return null;
+        }
+        try {
+            // Try PNG first (JDK handles natively)
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (img != null) return img;
+            // Try ICO via manual extraction
+            byte[] extracted = extractLargestImageFromIco(bytes);
+            if (extracted != null) {
+                img = ImageIO.read(new ByteArrayInputStream(extracted));
+                if (img != null) return img;
+            }
+        } catch (Exception e) {
+            log.warn("icon decode failed: {} — icon will be OS default", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Extract the largest embedded image from a valid ICO blob.
+     * Returns either a full-fledged BMP (BITMAPFILEHEADER + BITMAPINFOHEADER + pixels)
+     * or a PNG (returned verbatim). Returns null on header errors.
+     */
+    private static byte[] extractLargestImageFromIco(byte[] ico) {
+        if (ico.length < 22) return null;
+        if (ico[0] != 0 || ico[1] != 0 || (ico[2] & 0xFF) != 1) return null; // not ICO
+        int count = (ico[4] & 0xFF) | ((ico[5] & 0xFF) << 8);
+        int bestSize = -1, bestOff = -1, bestIdx = -1;
+        for (int i = 0; i < count; i++) {
+            int off = 6 + i * 16;
+            if (off + 16 > ico.length) break;
+            int size = (ico[off + 8] & 0xFF) | ((ico[off + 9] & 0xFF) << 8) |
+                       ((ico[off + 10] & 0xFF) << 16) | ((ico[off + 11] & 0xFF) << 24);
+            int foff = (ico[off + 12] & 0xFF) | ((ico[off + 13] & 0xFF) << 8) |
+                       ((ico[off + 14] & 0xFF) << 16) | ((ico[off + 15] & 0xFF) << 24);
+            if (size > bestSize) { bestSize = size; bestOff = foff; bestIdx = i; }
+        }
+        if (bestOff < 0 || bestOff + bestSize > ico.length) return null;
+        byte[] raw = java.util.Arrays.copyOfRange(ico, bestOff, bestOff + bestSize);
+        // Detect PNG vs BMP
+        if (raw.length >= 8 && raw[0] == (byte) 0x89 && raw[1] == 0x50 && raw[2] == 0x4E && raw[3] == 0x47) {
+            return raw; // PNG-in-ICO — JDK ImageIO handles PNG natively
+        }
+        if (raw.length >= 40 && raw[0] == 0x28 && raw[1] == 0x00) {
+            // BITMAPINFOHEADER (40 bytes) — prepend BITMAPFILEHEADER (14 bytes)
+            byte[] full = new byte[14 + raw.length];
+            full[0] = 'B'; full[1] = 'M';
+            int total = 14 + raw.length;
+            full[2] = (byte) total; full[3] = (byte) (total >> 8);
+            full[4] = (byte) (total >> 16); full[5] = (byte) (total >> 24);
+            // bytes 6..11 reserved
+            // bytes 12..13 offset to pixels (= 14 + 40 = 54)
+            full[10] = (byte) 54; full[11] = (byte) 0;
+            System.arraycopy(raw, 0, full, 14, raw.length);
+            return full;
+        }
+        return null;
     }
 
     private AuditLogApp() {}

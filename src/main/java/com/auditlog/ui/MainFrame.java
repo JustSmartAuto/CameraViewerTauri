@@ -8,6 +8,10 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -23,6 +27,8 @@ public class MainFrame extends JFrame {
 
     private final AppConfig config;
     private final H2Store store;
+    private final Path configFile;    // where to save()
+    private TrayManager trayManager;   // set externally after construction
 
     private final LogTableModel model = new LogTableModel();
     private final JTable table = new JTable(model);
@@ -36,20 +42,45 @@ public class MainFrame extends JFrame {
     private final JButton startStopBtn = new JButton("Start Server");
     private final JButton exportBtn = new JButton("Export JSON");
     private final JButton pruneBtn = new JButton("Prune");
+    private final JButton settingsBtn = new JButton("⚙ Settings");
     private final JSpinner pruneKeep = new JSpinner(new SpinnerNumberModel(100_000, 1000, 10_000_000, 1000));
 
-    public MainFrame(AppConfig config, H2Store store) {
+    public MainFrame(AppConfig config, H2Store store, Path configFile) {
         super("Audit Log Server");
         this.config = config;
         this.store = store;
+        this.configFile = configFile;
 
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        // When minimized, hide to tray so there is no stray taskbar button
+        addWindowStateListener(new WindowAdapter() {
+            @Override public void windowStateChanged(WindowEvent e) {
+                if ((e.getNewState() & Frame.ICONIFIED) != 0 && trayManager != null && trayManager.isInstalled()) {
+                    trayManager.hideFrame();
+                }
+            }
+        });
+
+        setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE); // exit handled by tray menu
         setSize(1280, 780);
         setLocationRelativeTo(null);
 
         buildUi();
         refreshHosts();
         refreshData();
+    }
+
+    public void setTrayManager(TrayManager tm) {
+        this.trayManager = tm;
+        // When user clicks the X button, hide to tray instead of terminating
+        addWindowListener(new WindowAdapter() {
+            @Override public void windowClosing(WindowEvent e) {
+                if (trayManager != null && trayManager.isInstalled()) {
+                    trayManager.hideFrame();
+                } else {
+                    System.exit(0);
+                }
+            }
+        });
     }
 
     private void buildUi() {
@@ -61,6 +92,7 @@ public class MainFrame extends JFrame {
         refreshBtn.addActionListener(e -> refreshData());
         exportBtn.addActionListener(e -> onExportJson());
         pruneBtn.addActionListener(e -> onPrune());
+        settingsBtn.addActionListener(e -> onOpenSettings());
 
         top.add(startStopBtn);
         top.add(Box.createHorizontalStrut(12));
@@ -83,6 +115,8 @@ public class MainFrame extends JFrame {
         top.add(new JLabel("Keep rows:"));
         top.add(pruneKeep);
         top.add(pruneBtn);
+        top.add(Box.createHorizontalStrut(8));
+        top.add(settingsBtn);
         top.add(exportBtn);
 
         // ---- table ----
@@ -94,7 +128,7 @@ public class MainFrame extends JFrame {
         table.getColumnModel().getColumn(0).setPreferredWidth(80);   // ts
         table.getColumnModel().getColumn(1).setPreferredWidth(120);  // host
         table.getColumnModel().getColumn(2).setPreferredWidth(70);   // sev
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);   // app
+        table.getColumnModel().getColumn(3).setPreferredWidth(110);  // app
         table.getColumnModel().getColumn(4).setPreferredWidth(90);   // msgid
         table.getColumnModel().getColumn(5).setPreferredWidth(90);   // src
         table.getColumnModel().getColumn(6).setPreferredWidth(400);  // msg
@@ -200,6 +234,85 @@ public class MainFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "Pruned " + removed + " rows. Current total: " + store.totalCount());
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Prune failed: " + e.getMessage());
+        }
+    }
+
+    private void onOpenSettings() {
+        // ---- Build a modal panel with the two new checkboxes ----
+        JCheckBox bootCheck = new JCheckBox("开机自动启动（Windows 仅当前用户 HKCU Run 注册表）", config.autostartOnBoot);
+        JCheckBox trayCheck = new JCheckBox("启动时自动最小化到托盘（需要托盘支持）", config.minimizeToTray);
+        if (!TrayManager.isSupportedStatic()) {
+            trayCheck.setEnabled(false);
+            trayCheck.setToolTipText("当前系统不支持系统托盘");
+        }
+        if (!WinAutostart.isWindows()) {
+            bootCheck.setEnabled(false);
+            bootCheck.setToolTipText("非 Windows 平台不支持 HKCU Run");
+        }
+
+        JPanel box = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(6, 6, 6, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        box.add(new JLabel("<html><b>行为设置</b></html>"), gbc);
+
+        gbc.gridy++;
+        box.add(bootCheck, gbc);
+        gbc.gridy++;
+        box.add(trayCheck, gbc);
+
+        int res = JOptionPane.showConfirmDialog(this, box, "Settings / 设置",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (res != JOptionPane.OK_OPTION) return;
+
+        config.autostartOnBoot = bootCheck.isSelected();
+        config.minimizeToTray  = trayCheck.isSelected();
+
+        // ---- Apply autostart immediately ----
+        boolean bootResult = applyAutostartSetting();
+        // ---- Apply minimize-to-tray immediately (affects next launch only, but validate) ----
+        if (config.minimizeToTray && trayManager != null && !trayManager.isInstalled()) {
+            trayManager.install();
+        }
+
+        // ---- Persist ----
+        try {
+            config.save(configFile);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Failed to save settings: " + ex.getMessage(),
+                    "Warning", JOptionPane.WARNING_MESSAGE);
+        }
+
+        if (!bootResult) {
+            JOptionPane.showMessageDialog(this,
+                    "启动项已" + (config.autostartOnBoot ? "启用" : "停用") + "，但写注册表失败。\n" +
+                    "尝试以管理员身份运行后重试。",
+                    "Audit Log Server", JOptionPane.WARNING_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this,
+                    "设置已保存：\n" +
+                    "  开机启动: " + (config.autostartOnBoot ? "ON" : "OFF") + "\n" +
+                    "  启动最小化到托盘: " + (config.minimizeToTray ? "ON" : "OFF"),
+                    "Audit Log Server", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /** Enable or disable the HKCU Run entry to match config.autostartOnBoot. */
+    private boolean applyAutostartSetting() {
+        if (!WinAutostart.isWindows()) return true; // no-op, pretend success
+        try {
+            Path jarPath = TrayManager.resolveJarPath();
+            if (jarPath == null) {
+                // Running from IDE — skip silently, don't reg an invalid path
+                return false;
+            }
+            if (config.autostartOnBoot) WinAutostart.enable(jarPath);
+            else                         WinAutostart.disable();
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
