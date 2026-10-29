@@ -1,0 +1,4 @@
+D:\JustStupid\CameraHelper相机显示_2606120922\NtpServerSilent\时间戳\NtpSetupHelper\bin\Release\NtpSetupHelper.exe
+D:\JustStupid\CameraHelper相机显示_2606120922\NtpServerSilent\时间戳\NtpSetupHelper\obj\Release\NtpSetupHelper.csproj.AssemblyReference.cache
+D:\JustStupid\CameraHelper相机显示_2606120922\NtpServerSilent\时间戳\NtpSetupHelper\obj\Release\NtpSetupHelper.csproj.CoreCompileInputs.cache
+D:\JustStupid\CameraHelper相机显示_2606120922\NtpServerSilent\时间戳\NtpSetupHelper\obj\Release\NtpSetupHelper.exe
