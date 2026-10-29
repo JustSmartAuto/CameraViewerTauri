@@ -9,9 +9,11 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,7 +63,8 @@ public class SyslogServer {
             serverSocket = new ServerSocket();
         }
         serverSocket.setReuseAddress(true);
-        serverSocket.bind(new InetSocketAddress(config.syslogPort));
+        InetAddress bindAddr = resolveBindAddress(config.syslogBindAddress);
+        serverSocket.bind(new InetSocketAddress(bindAddr, config.syslogPort));
 
         pool = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -69,7 +72,27 @@ public class SyslogServer {
         acceptThread.setDaemon(true);
         acceptThread.start();
 
-        log.info("Syslog server started on {} (tls={})", serverSocket.getLocalSocketAddress(), config.tlsEnabled);
+        log.info("Syslog server started on {}:{} (tls={})", bindAddr.getHostAddress(), config.syslogPort, config.tlsEnabled);
+    }
+
+    /** Resolve config.syslogBindAddress into an InetAddress.
+     *  "0.0.0.0" / blank → wildcard (all interfaces); invalid strings → fallback to 0.0.0.0. */
+    private static InetAddress resolveBindAddress(String bind) {
+        if (bind == null || bind.isBlank() || "0.0.0.0".equals(bind)) {
+            return wildcard();
+        }
+        try {
+            return InetAddress.getByName(bind);
+        } catch (UnknownHostException e) {
+            log.warn("cannot resolve bind address '{}', falling back to 0.0.0.0: {}", bind, e.getMessage());
+            return wildcard();
+        }
+    }
+
+    /** Always resolve to 0.0.0.0 (wildcard) — guarded so it never propagates. */
+    private static InetAddress wildcard() {
+        try { return InetAddress.getByName("0.0.0.0"); }
+        catch (UnknownHostException e) { return InetAddress.getLoopbackAddress(); }
     }
 
     public synchronized void stop() {

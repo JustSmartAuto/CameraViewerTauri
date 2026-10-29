@@ -38,6 +38,7 @@ public class MainFrame extends JFrame {
     private final JTable table = new JTable(model);
     private final JLabel statusLabel = new JLabel(I18n.t("status.stopped"));
     private final JLabel countLabel = new JLabel();
+    private final JLabel portLabel = new JLabel();
     private final JComboBox<String> hostCombo = new JComboBox<>();
     private final JSpinner sevMin = new JSpinner(new SpinnerNumberModel(0, 0, 7, 1));
     private final JSpinner sevMax = new JSpinner(new SpinnerNumberModel(7, 0, 7, 1));
@@ -132,7 +133,7 @@ public class MainFrame extends JFrame {
         bottom.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Separator.foreground")));
         statusLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 0));
         bottom.add(statusLabel, BorderLayout.WEST);
-        JLabel portLabel = new JLabel(I18n.t("status.port", config.syslogPort) +
+        portLabel.setText(I18n.t("status.port", config.syslogPort) +
                 (config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
         portLabel.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 8));
         bottom.add(portLabel, BorderLayout.EAST);
@@ -400,6 +401,14 @@ public class MainFrame extends JFrame {
         }
     }
 
+    private void refreshStatusBarPort() {
+        String bind = config.syslogBindAddress;
+        if ("0.0.0.0".equals(bind)) bind = "*";
+        portLabel.setText(I18n.t("status.port", config.syslogPort) +
+                " " + bind +
+                (config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
+    }
+
     private void onOpenSettings() {
         // ---- 语言下拉 ----
         JComboBox<String> langCombo = new JComboBox<>();
@@ -423,19 +432,41 @@ public class MainFrame extends JFrame {
             bootCheck.setToolTipText(I18n.t("chk.boot-autostart.tooltip"));
         }
 
+        // ---- 网络设置 ----
+        JSpinner portSpinner = new JSpinner(
+                new SpinnerNumberModel(config.syslogPort, 1, 65535, 1));
+        portSpinner.setPreferredSize(new Dimension(110, 26));
+        JTextField bindField = new JTextField(config.syslogBindAddress, 12);
+
         JPanel box = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
-        gbc.gridx = 0; gbc.gridy = 0;
-        gbc.gridwidth = 2;
+
+        // --- 网络 ---
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
+        box.add(new JLabel(I18n.t("dlg.settings.network")), gbc);
+
+        gbc.gridx = 0; gbc.gridy++; gbc.gridwidth = 1;
+        box.add(new JLabel(I18n.t("lbl.port")), gbc);
+        gbc.gridx = 1;
+        box.add(portSpinner, gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        box.add(new JLabel(I18n.t("lbl.bind.address")), gbc);
+        gbc.gridx = 1;
+        box.add(bindField, gbc);
+
+        // --- 行为 ---
+        gbc.gridx = 0; gbc.gridy++; gbc.gridwidth = 2;
+        box.add(Box.createVerticalStrut(8), gbc);
+        gbc.gridy++;
         box.add(new JLabel(I18n.t("dlg.settings.behavior")), gbc);
 
         gbc.gridwidth = 1;
         gbc.gridy++;
         box.add(new JLabel(I18n.t("dlg.language")), gbc);
         gbc.gridx = 1;
-        gbc.gridwidth = 1;
         box.add(langCombo, gbc);
 
         gbc.gridx = 0; gbc.gridwidth = 2; gbc.gridy++;
@@ -451,18 +482,42 @@ public class MainFrame extends JFrame {
         if (res != JOptionPane.OK_OPTION) return;
 
         boolean prevAutoStart = config.autoStartServer;
+        int prevPort = config.syslogPort;
+        String prevBind = config.syslogBindAddress;
         config.autoStartServer = autoServerCheck.isSelected();
         config.autostartOnBoot = bootCheck.isSelected();
         config.minimizeToTray  = trayCheck.isSelected();
+        config.syslogPort = (Integer) portSpinner.getValue();
+        config.syslogBindAddress = bindField.getText().trim().isEmpty() ? "0.0.0.0" : bindField.getText().trim();
         // 语言：取 SUPPORTED[selIdx][0]
         config.locale = I18n.SUPPORTED[langCombo.getSelectedIndex()][0];
 
-        // ---- 如果用户把 autoStartServer 从 OFF 改为 ON，立即启动服务器 ----
         boolean running = ServerController.get().isRunning();
-        if (config.autoStartServer && !prevAutoStart && !running) {
+
+        // ---- 如果端口或绑定地址变了且服务器正在运行，自动重启以应用新配置 ----
+        boolean netChanged = config.syslogPort != prevPort || !config.syslogBindAddress.equals(prevBind);
+        if (running && netChanged) {
+            try {
+                ServerController.get().restart(config, store);
+                appendWelcomeRow("welcome.restarted");
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, I18n.t("dlg.server-fail", e.getMessage()),
+                        I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
+            }
+        } else if (!running && config.autoStartServer) {
+            // ---- 服务器未运行但用户刚打开 autoStartServer，立即启动 ----
             try { ServerController.get().start(config, store); }
             catch (Exception ignored) {}
+        } else if (config.autoStartServer && !prevAutoStart) {
+            // ---- 行为设置变更：autoStartServer 从 OFF → ON ----
+            if (!running) {
+                try { ServerController.get().start(config, store); }
+                catch (Exception ignored) {}
+            }
         }
+
+        // ---- 状态栏端口 label 立即刷新（无论重启与否） ----
+        refreshStatusBarPort();
 
         boolean bootResult = applyAutostartSetting();
         if (config.minimizeToTray && trayManager != null && !trayManager.isInstalled()) {

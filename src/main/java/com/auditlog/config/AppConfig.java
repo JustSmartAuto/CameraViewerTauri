@@ -15,6 +15,8 @@ public class AppConfig {
 
     // ---- Network / Syslog ----
     public int syslogPort = 5140;
+    /** Bind address. 0.0.0.0 = all IPv4 interfaces (default), 127.0.0.1 = loopback only. */
+    public String syslogBindAddress = "0.0.0.0";
     public boolean tlsEnabled = false;
     public String tlsKeystorePath = "";
     public String tlsKeystorePassword = "";
@@ -53,6 +55,7 @@ public class AppConfig {
                 Properties p = new Properties();
                 p.load(in);
                 cfg.syslogPort         = parseInt(p, "syslog.port", cfg.syslogPort);
+                cfg.syslogBindAddress  = p.getProperty("syslog.bind.address", cfg.syslogBindAddress);
                 cfg.tlsEnabled         = Boolean.parseBoolean(p.getProperty("syslog.tls.enabled", String.valueOf(cfg.tlsEnabled)));
                 cfg.tlsKeystorePath    = p.getProperty("syslog.tls.keystore", cfg.tlsKeystorePath);
                 cfg.tlsKeystorePassword = p.getProperty("syslog.tls.keystore.password", cfg.tlsKeystorePassword);
@@ -76,6 +79,7 @@ public class AppConfig {
     public void save(Path file) throws IOException {
         Properties p = new Properties();
         p.setProperty("syslog.port", String.valueOf(syslogPort));
+        p.setProperty("syslog.bind.address", syslogBindAddress);
         p.setProperty("syslog.tls.enabled", String.valueOf(tlsEnabled));
         p.setProperty("syslog.tls.keystore", tlsKeystorePath);
         p.setProperty("syslog.tls.keystore.password", tlsKeystorePassword);
