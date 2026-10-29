@@ -21,6 +21,7 @@ namespace CognexLogging.Launcher
     internal static class Program
     {
         private const string JreZipResource = "jre.zip";
+        private const string JreVersionResource = "jre.version";
         private const string AppJarResource = "app.jar";
         private const string AppDirName = "CognexLogging";
         private const string AppJarName = "audit-log-server.jar";
@@ -178,11 +179,21 @@ namespace CognexLogging.Launcher
                 return s != null;
         }
 
-        /// <summary>解压内嵌 jre.zip 到 jreDir，已解压且结构完整时跳过。</summary>
+        /// <summary>
+        /// 解压内嵌 jre.zip 到 jreDir。内嵌的 jre.version 与已解压目录里的 .version 不一致时
+        /// 会删除旧 JRE 重新解压——这样模块集升级（例如补上 java.net.http）在客户端也能生效。
+        /// </summary>
         private static void ExtractJreIfNeeded(string jreDir)
         {
             string javaMarker = Path.Combine(jreDir, "bin", "java.exe");
-            if (File.Exists(javaMarker)) return; // 已解压，跳过
+            string versionFile = Path.Combine(jreDir, ".version");
+            string version = ReadEmbeddedJreVersion();
+            string extracted = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : null;
+
+            // 开发态（未内嵌版本标记）：已解压就直接用
+            if (version == null && File.Exists(javaMarker)) return;
+            // 版本一致且结构完整 → 跳过
+            if (version != null && File.Exists(javaMarker) && version == extracted) return;
 
             // 先解压到 temp 再原子替换
             string tempDir = jreDir + "." + DateTime.Now.Ticks;
@@ -204,6 +215,7 @@ namespace CognexLogging.Launcher
 
                 if (Directory.Exists(jreDir)) Directory.Delete(jreDir, true);
                 Directory.Move(tempDir, jreDir);
+                if (version != null) File.WriteAllText(versionFile, version);
             }
             catch
             {
@@ -213,6 +225,16 @@ namespace CognexLogging.Launcher
             finally
             {
                 if (File.Exists(tempZip)) { try { File.Delete(tempZip); } catch { } }
+            }
+        }
+
+        /// <summary>读取内嵌的 JRE 版本标记；开发态（无此资源）返回 null。</summary>
+        private static string ReadEmbeddedJreVersion()
+        {
+            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(JreVersionResource))
+            {
+                if (s == null) return null;
+                using (var r = new StreamReader(s)) return r.ReadToEnd().Trim();
             }
         }
 

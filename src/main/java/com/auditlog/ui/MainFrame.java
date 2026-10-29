@@ -51,6 +51,11 @@ public class MainFrame extends JFrame {
     private java.util.List<CameraConfig> cameras;
 
     private final LogTableModel model = new LogTableModel();
+    // 新日志实时追加后，1.2 秒内合并刷新一次「事件总数 / 当前显示」，避免每条都查库
+    private final Timer autoRefreshTimer = new Timer(1200, e -> {
+        ((Timer) e.getSource()).stop();
+        refreshData();
+    });
     private final JTable table = new JTable(model);
     private final JLabel statusLabel = new JLabel(I18n.t("status.stopped"));
     private final JLabel countLabel = new JLabel();
@@ -785,6 +790,10 @@ public class MainFrame extends JFrame {
     public void refreshStartStopButton() {
         boolean running = ServerController.get().isRunning();
         startStopBtn.setText(running ? I18n.t("btn.restart") : I18n.t("btn.start"));
+        statusLabel.setText(running
+                ? I18n.t("status.listening", config.syslogPort,
+                        config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled"))
+                : I18n.t("status.stopped"));
     }
 
     /** Refresh all visible UI text when locale changes at runtime. */
@@ -839,6 +848,8 @@ public class MainFrame extends JFrame {
 
     public void appendRow(AuditRow row) {
         model.addRow(row);
+        // 实时追加后合并刷新计数（否则界面一直显示「事件总数 0」）
+        if (!autoRefreshTimer.isRunning()) autoRefreshTimer.start();
     }
 
     // ---- table model ----

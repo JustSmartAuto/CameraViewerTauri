@@ -29,7 +29,7 @@ Cognex In-Sight Vision Systems 审计日志集中存储与可视化服务器。�
 | SLF4J Simple | 2.0.16 | 日志 |
 | .NET Framework | 4.8 | Launcher 目标框架，Win10 自带 |
 | Costura.Fody | 6.0.0 | Launcher DLL 合并为单文件 EXE |
-| jlink | Zulu JDK 25 | 精简 JRE（仅保留 java.desktop/logging/sql/prefs/instrument/naming/security.jgss） |
+| jlink | Zulu JDK 25 | 精简 JRE（java.desktop/logging/sql/prefs/instrument/naming/security.jgss + **java.net.http** + **jdk.crypto.ec** + **jdk.unsupported**） |
 
 ## 快速开始
 
@@ -44,13 +44,18 @@ Cognex In-Sight Vision Systems 审计日志集中存储与可视化服务器。�
 # 复用已有 jre.zip 跳过 jlink（秒级完成）
 ./bundle-with-timestamp.sh --skip-jlink
 
-# PowerShell
-.\bundle-with-timestamp.ps1
+# PowerShell（等价于 build-bundle.sh，内部会先打 fat jar）
+.\launcher\build-bundle.ps1
 ```
 
 产物位于 `dist/Cognex相机日志服务器_{timestamp}.exe`，直接双击运行即可。
 
 > 前置：系统安装 Zulu JDK 25（jlink）+ dotnet SDK 8+/9+（能 target net48）。
+>
+> ⚠️ 改动 jlink 模块列表（`launcher/build-bundle.ps1` 里的 `$Modules`）后必须重新打包。`payload/jre.version`
+> 会随 jre.zip 内容变化，Launcher 启动时发现版本不一致会自动删除 `%LOCALAPPDATA%\CognexLogging\jre`
+> 并重新解压，客户端无需手动清理。**若缺少 `java.net.http`，相机拉取与「相机管理」对话框都会异常**
+> （对话框只画出部分控件）。
 
 ### 方式二：Fat Jar + 系统 Java（开发调试）
 
@@ -154,7 +159,6 @@ FluentdLoggingServer/
 ├── build-with-timestamp.sh            # bash / WSL：Gradle fat jar + 时间戳
 ├── build-with-timestamp.ps1           # PowerShell：Gradle fat jar + 时间戳
 ├── bundle-with-timestamp.sh           # bash / WSL：一键完整打包（fatJar → jlink → dotnet → dist/*.exe）
-├── bundle-with-timestamp.ps1          # PowerShell：一键完整打包
 ├── gradle-dist/gradle-9.7.1/          # 可选：本地 Gradle 发行包
 │
 ├── src/main/java/com/auditlog/

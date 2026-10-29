@@ -37,6 +37,10 @@
     <EmbeddedResource Include="payload\app.jar" Condition="Exists('payload\app.jar')">
       <LogicalName>app.jar</LogicalName>
     </EmbeddedResource>
+    <!-- JRE 版本标记：与已解压 JRE 的版本不一致时强制重新解压（避免旧模块集残留） -->
+    <EmbeddedResource Include="payload\jre.version" Condition="Exists('payload\jre.version')">
+      <LogicalName>jre.version</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <!-- Costura 默认把所有引用 dll 都 embed，排除 Fody 自身和非托管文件 -->

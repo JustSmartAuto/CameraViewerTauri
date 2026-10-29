@@ -34,7 +34,15 @@ Write-Host "==> fat jar: $($FatJar.FullName)" -ForegroundColor Green
 Copy-Item $FatJar.FullName "$Payload\app.jar" -Force
 
 # ---- 2. jlink trimmed JRE ----
-$NeedJlink = (-not (Test-Path "$Payload\jre.zip")) -and (-not $SkipJlink)
+# 注意：模块集变化时必须重新 jlink（payload\jre.zip 会被覆盖）。
+# 运行时用到的非默认模块：
+#   java.net.http  —— 相机 Platform API 拉取（/api/audit-log）
+#   jdk.crypto.ec  —— TLS 椭圆曲线算法
+#   jdk.unsupported—— sun.misc.Unsafe（Gson/H2 反射优化）
+$Modules = "java.desktop,java.logging,java.sql,java.prefs,java.instrument,java.naming," +
+           "java.security.jgss,java.net.http,jdk.crypto.ec,jdk.unsupported"
+
+$NeedJlink = (-not $SkipJlink)
 if ($NeedJlink) {
   $Jlink = $null
   if ($JavaHome) {
@@ -66,7 +74,7 @@ if ($NeedJlink) {
 
   & $Jlink `
     --module-path "$JdkHome\jmods" `
-    --add-modules java.desktop,java.logging,java.sql,java.prefs,java.instrument,java.naming,java.security.jgss `
+    --add-modules $Modules `
     --strip-debug --no-man-pages `
     --output "$Tmp"
   if ($LASTEXITCODE -ne 0) { throw "jlink failed" }
@@ -74,8 +82,15 @@ if ($NeedJlink) {
   Compress-Archive -Path "$Tmp\*" -DestinationPath "$Payload\jre.zip" -Force
   Remove-Item $Tmp -Recurse -Force
 } else {
-  Write-Host "==> payload\jre.zip exists, skipping jlink" -ForegroundColor Gray
+  Write-Host "==> -SkipJlink：复用 payload\jre.zip" -ForegroundColor Gray
 }
+
+# ---- 2b. JRE 版本标记 ----
+# 客户端已解压的 JRE 版本与此不一致时，Launcher 会删除旧目录重新解压，
+# 避免机器上残留旧模块集（历史 bug：缺 java.net.http 导致相机功能异常）。
+$JreVersion = (Get-FileHash "$Payload\jre.zip" -Algorithm SHA256).Hash.Substring(0, 16)
+Set-Content "$Payload\jre.version" $JreVersion -Encoding ASCII
+Write-Host "==> jre.version: $JreVersion" -ForegroundColor Green
 
 # ---- 3. dotnet build ----
 Write-Host "==> dotnet build (net48 Release)" -ForegroundColor Green
