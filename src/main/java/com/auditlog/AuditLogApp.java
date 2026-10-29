@@ -1,6 +1,7 @@
 package com.auditlog;
 
 import com.auditlog.config.AppConfig;
+import com.auditlog.config.PathsUtil;
 import com.auditlog.db.H2Store;
 import com.auditlog.i18n.I18n;
 import com.auditlog.ui.MainFrame;
@@ -27,8 +28,9 @@ public final class AuditLogApp {
     private static final Logger log = LoggerFactory.getLogger(AuditLogApp.class);
 
     public static void main(String[] args) {
-        // Load config
-        Path cfgPath = Path.of("app.properties");
+        // Load config from D:\JustSmart\CognexLoggingServer\config\app.properties
+        // (or %APPDATA%\CognexLoggingServer\config\app.properties if D: absent).
+        Path cfgPath = PathsUtil.configFile();
         AppConfig cfg = AppConfig.load(cfgPath);
 
         // --- Locale: honour saved preference before any UI is built ---
@@ -76,10 +78,21 @@ public final class AuditLogApp {
         frame.setTrayManager(tray);
         tray.install();
 
-        // Auto-start server if asked (--autostart passed by WinAutostart / the tray menu)
-        if (args.length > 0 && "--autostart".equals(args[0])) {
-            try { ServerController.get().start(cfg, store); }
-            catch (Exception e) { log.warn("autostart failed: {}", e.getMessage()); }
+        // Auto-start server if either:
+        //   a) the "启动软件后自动启动服务器" setting is true (default), or
+        //   b) --autostart was passed (WinAutostart / tray menu explicit request).
+        boolean autoStart = cfg.autoStartServer || (args.length > 0 && "--autostart".equals(args[0]));
+        if (autoStart) {
+            try {
+                ServerController.get().start(cfg, store);
+                // Mirror the same feedback the Start button would show
+                SwingUtilities.invokeLater(() -> {
+                    frame.appendWelcomeRow("welcome.started");
+                    frame.refreshStartStopButton();
+                });
+            } catch (Exception e) {
+                log.warn("autostart failed: {}", e.getMessage());
+            }
         }
 
         SwingUtilities.invokeLater(tray::showAccordingToPreference);

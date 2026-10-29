@@ -22,7 +22,8 @@ public class AppConfig {
     public String tlsTruststorePassword = "";
 
     // ---- Storage ----
-    public String h2DbPath = "./auditlog/auditlog";
+    /** Default resolves to {@code D:\JustSmart\CognexLoggingServer\db\auditlog} (or %APPDATA% fallback). */
+    public String h2DbPath = PathsUtil.h2DbPathValue();
 
     // ---- UI ----
     public int maxTableRows = 100_000;
@@ -35,6 +36,8 @@ public class AppConfig {
     public boolean autostartOnBoot = false;
     /** Auto-minimize to system tray on launch. Default false. */
     public boolean minimizeToTray = false;
+    /** Start the Syslog server automatically when the app launches. Default true. */
+    public boolean autoStartServer = true;
 
     /** Convenience accessor — splits the stored tag back into a Locale. */
     public Locale asLocale() {
@@ -61,6 +64,7 @@ public class AppConfig {
                 cfg.locale             = p.getProperty("ui.locale", cfg.locale);
                 cfg.autostartOnBoot    = Boolean.parseBoolean(p.getProperty("behavior.autostart.boot", String.valueOf(cfg.autostartOnBoot)));
                 cfg.minimizeToTray     = Boolean.parseBoolean(p.getProperty("behavior.minimize.tray", String.valueOf(cfg.minimizeToTray)));
+                cfg.autoStartServer    = Boolean.parseBoolean(p.getProperty("behavior.auto-start-server", String.valueOf(cfg.autoStartServer)));
             } catch (IOException ignored) {
                 // use defaults
             }
@@ -83,6 +87,7 @@ public class AppConfig {
         p.setProperty("ui.locale", locale);
         p.setProperty("behavior.autostart.boot", String.valueOf(autostartOnBoot));
         p.setProperty("behavior.minimize.tray", String.valueOf(minimizeToTray));
+        p.setProperty("behavior.auto-start-server", String.valueOf(autoStartServer));
 
         if (file.getParent() != null) Files.createDirectories(file.getParent());
         try (OutputStream out = Files.newOutputStream(file)) {

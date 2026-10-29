@@ -63,6 +63,12 @@ public class ServerController {
         }
     }
 
+    /** stop() + start() — called by the "重启服务器" button. */
+    public synchronized void restart(AppConfig config, H2Store store) throws Exception {
+        stop();
+        start(config, store);
+    }
+
     public boolean isRunning() {
         SyslogServer s = server.get();
         return s != null && s.isRunning();

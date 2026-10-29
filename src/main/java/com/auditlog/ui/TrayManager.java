@@ -49,7 +49,7 @@ public class TrayManager {
         tray = SystemTray.getSystemTray();
 
         Image img = icon != null ? icon : placeholderIcon();
-        trayIcon = new TrayIcon(img, I18n.t("tray.title"), buildMenu());
+        trayIcon = new TrayIcon(img, TRAY_TITLE_EN, buildMenu());
         trayIcon.setImageAutoSize(true);
 
         trayIcon.addActionListener(e -> SwingUtilities.invokeLater(this::restoreFrame));
@@ -96,29 +96,46 @@ public class TrayManager {
         else frame.setVisible(true);
     }
 
-    /** Re-translate the popup menu after a runtime locale change. */
+    /**
+     * Called when the user switches locale at runtime. The tray popup menu and
+     * tooltip intentionally stay in English (see class-level comment), but we
+     * rebuild to keep references fresh.
+     */
     public synchronized void onLocaleChanged() {
         if (trayIcon != null) {
-            trayIcon.setToolTip(I18n.t("tray.title"));
+            trayIcon.setToolTip(TRAY_TITLE_EN);
             trayIcon.setPopupMenu(buildMenu());
         }
     }
 
+    /**
+     * Rebuild the tray popup menu. NOTE: Strings here are deliberately hard-coded
+     * in English — Windows SystemTray uses a heavyweight native HWND popup that
+     * sometimes fails to render CJK glyphs depending on JDK build / OS code page.
+     * The tooltip also uses English for the same reason.
+     */
+    private static final String TRAY_TITLE_EN = "Cognex Camera Log Server";
+    private static final String TRAY_SHOW_EN  = "Show / Display";
+    private static final String TRAY_HIDE_EN  = "Hide";
+    private static final String TRAY_EXIT_EN  = "Exit";
+
     private PopupMenu buildMenu() {
         PopupMenu m = new PopupMenu();
 
-        MenuItem showItem = new MenuItem(I18n.t("tray.show"));
+        MenuItem showItem = new MenuItem(TRAY_SHOW_EN);
         showItem.addActionListener(e -> SwingUtilities.invokeLater(this::restoreFrame));
         m.add(showItem);
 
-        MenuItem hideItem = new MenuItem(I18n.t("tray.hide"));
+        MenuItem hideItem = new MenuItem(TRAY_HIDE_EN);
         hideItem.addActionListener(e -> hideFrame());
         m.add(hideItem);
 
         m.addSeparator();
 
-        MenuItem exitItem = new MenuItem(I18n.t("tray.exit"));
+        MenuItem exitItem = new MenuItem(TRAY_EXIT_EN);
         exitItem.addActionListener(e -> {
+            // The confirm dialog IS a Swing lightweight JOptionPane — safe to
+            // localize, so we keep I18n.t() here (unlike the tray menu).
             int r = JOptionPane.showConfirmDialog(frame,
                     I18n.t("tray.exit.confirm"),
                     I18n.t("dlg.confirm"),

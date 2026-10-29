@@ -4,6 +4,9 @@ import com.auditlog.server.SyslogMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,21 +22,31 @@ public class H2Store implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(H2Store.class);
 
+    private final String dbPath;
     private final String url;
     private Connection conn;
 
     public H2Store(String dbPath) {
         // dbPath like "./auditlog/auditlog" → H2 file "./auditlog/auditlog.mv.db"
         // AUTO_SERVER=FALSE (default) — 单 JVM 内嵌，不绑定额外 TCP 端口
+        this.dbPath = dbPath;
         this.url = "jdbc:h2:file:" + dbPath + ";DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE";
     }
 
     public synchronized void open() throws SQLException {
         if (conn != null && !conn.isClosed()) return;
         try {
+            // Guard 1: ensure parent directory exists recursively — if H2 opens against
+            // a path whose ancestor does not exist, DriverManager.getConnection() crashes
+            // with a cryptic "A file path that is not found" instead of creating it.
+            Path p = Path.of(dbPath).toAbsolutePath();
+            Files.createDirectories(p.getParent());
+
             Class.forName("org.h2.Driver");
         } catch (ClassNotFoundException e) {
             throw new SQLException("H2 driver not found", e);
+        } catch (IOException e) {
+            throw new SQLException("Cannot create H2 parent directory: " + e.getMessage(), e);
         }
         conn = DriverManager.getConnection(url, "sa", "");
         conn.setAutoCommit(true);

@@ -9,9 +9,11 @@ import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.awt.event.InputEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -149,28 +151,127 @@ public class MainFrame extends JFrame {
         split.setDividerLocation(680);
         split.setResizeWeight(1.0);
 
+        // ---- Menu bar ----
+        setJMenuBar(buildMenuBar());
+
         add(top, BorderLayout.NORTH);
         add(split, BorderLayout.CENTER);
+    }
+
+    private JMenuBar buildMenuBar() {
+        JMenuBar bar = new JMenuBar();
+
+        JMenu mFile = new JMenu(I18n.t("menu.file"));
+        mFile.setMnemonic(I18n.t("menu.file.mnemonic").charAt(0));
+
+        JMenuItem miOpenCfg = new JMenuItem(I18n.t("menu.open-config-dir"));
+        miOpenCfg.addActionListener(e -> openInDesktop(configFile.toAbsolutePath().getParent()));
+        mFile.add(miOpenCfg);
+
+        JMenuItem miOpenDb = new JMenuItem(I18n.t("menu.open-db-dir"));
+        miOpenDb.addActionListener(e -> {
+            // h2DbPath = "./auditlog/auditlog" — parent dir is where .mv.db actually lives
+            Path dbFile = Path.of(config.h2DbPath).toAbsolutePath();
+            openInDesktop(dbFile.getParent());
+        });
+        mFile.add(miOpenDb);
+
+        JMenuItem miSettings = new JMenuItem(I18n.t("menu.settings"));
+        miSettings.setAccelerator(KeyStroke.getKeyStroke('S', InputEvent.CTRL_DOWN_MASK));
+        miSettings.addActionListener(e -> onOpenSettings());
+        mFile.add(miSettings);
+
+        mFile.addSeparator();
+
+        JMenuItem miExit = new JMenuItem(I18n.t("menu.exit"));
+        miExit.addActionListener(e -> {
+            int r = JOptionPane.showConfirmDialog(this,
+                    I18n.t("tray.exit.confirm"),
+                    I18n.t("dlg.confirm"),
+                    JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (r == JOptionPane.YES_OPTION) { dispose(); System.exit(0); }
+        });
+        mFile.add(miExit);
+
+        bar.add(mFile);
+
+        JMenu mHelp = new JMenu(I18n.t("menu.help"));
+        mHelp.setMnemonic(I18n.t("menu.help.mnemonic").charAt(0));
+        JMenuItem miAbout = new JMenuItem(I18n.t("menu.about"));
+        miAbout.addActionListener(e -> JOptionPane.showMessageDialog(this,
+                I18n.t("about.body"), I18n.t("menu.about"), JOptionPane.INFORMATION_MESSAGE));
+        mHelp.add(miAbout);
+        bar.add(mHelp);
+
+        return bar;
+    }
+
+    /** Open a directory in the OS file explorer (Windows Explorer / macOS Finder). */
+    private void openInDesktop(Path dir) {
+        try {
+            if (dir == null) return;
+            if (!Files.exists(dir)) Files.createDirectories(dir);
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().open(dir.toFile());
+            } else {
+                // Fallback — Windows-only shell call if Desktop API is blocked
+                Runtime.getRuntime().exec("explorer \"" + dir.toAbsolutePath() + "\"");
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.open-dir-fail", ex.getMessage()),
+                    I18n.t("dlg.warning"), JOptionPane.WARNING_MESSAGE);
+        }
     }
 
     private void onStartStop() {
         var controller = ServerController.get();
         if (controller.isRunning()) {
-            controller.stop();
-            startStopBtn.setText(I18n.t("btn.start"));
-            statusLabel.setText(I18n.t("status.stopped"));
-        } else {
+            // Already running → 重启（stop + start）而不是直接 stop
             try {
-                controller.start(config, store);
-                startStopBtn.setText(I18n.t("btn.stop"));
+                controller.restart(config, store);
+                appendWelcomeRow("welcome.restarted");
                 statusLabel.setText(I18n.t("status.listening",
                         config.syslogPort,
                         config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, I18n.t("dlg.server-fail", e.getMessage()),
                         I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
+                // 重启失败则保证 UI 状态真实
+                startStopBtn.setText(I18n.t("btn.start"));
+                statusLabel.setText(I18n.t("status.stopped"));
+                return;
+            }
+        } else {
+            try {
+                controller.start(config, store);
+                appendWelcomeRow("welcome.started");
+                statusLabel.setText(I18n.t("status.listening",
+                        config.syslogPort,
+                        config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, I18n.t("dlg.server-fail", e.getMessage()),
+                        I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
+                return;
             }
         }
+        startStopBtn.setText(I18n.t("btn.restart"));
+    }
+
+    /** Append a synthetic informational row to the table (never written to DB). */
+    public void appendWelcomeRow(String i18nKey) {
+        AuditRow row = new AuditRow(
+                -1L,                              // id = -1 means non-persisted
+                java.time.Instant.now(),
+                "—",                              // hostname placeholder
+                6,                                // severity informational
+                "informational",
+                I18n.t("app.title"),
+                "", "", 0,
+                "",
+                I18n.t(i18nKey),
+                null
+        );
+        model.addRow(row);
     }
 
     private void refreshHosts() {
@@ -251,6 +352,7 @@ public class MainFrame extends JFrame {
         }
         langCombo.setSelectedIndex(selIdx);
 
+        JCheckBox autoServerCheck = new JCheckBox(I18n.t("chk.auto-start-server"), config.autoStartServer);
         JCheckBox bootCheck = new JCheckBox(I18n.t("chk.boot-autostart"), config.autostartOnBoot);
         JCheckBox trayCheck = new JCheckBox(I18n.t("chk.minimize-to-tray"), config.minimizeToTray);
         if (!TrayManager.isSupportedStatic()) {
@@ -278,6 +380,8 @@ public class MainFrame extends JFrame {
         box.add(langCombo, gbc);
 
         gbc.gridx = 0; gbc.gridwidth = 2; gbc.gridy++;
+        box.add(autoServerCheck, gbc);
+        gbc.gridy++;
         box.add(bootCheck, gbc);
         gbc.gridy++;
         box.add(trayCheck, gbc);
@@ -287,10 +391,19 @@ public class MainFrame extends JFrame {
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (res != JOptionPane.OK_OPTION) return;
 
+        boolean prevAutoStart = config.autoStartServer;
+        config.autoStartServer = autoServerCheck.isSelected();
         config.autostartOnBoot = bootCheck.isSelected();
         config.minimizeToTray  = trayCheck.isSelected();
         // 语言：取 SUPPORTED[selIdx][0]
         config.locale = I18n.SUPPORTED[langCombo.getSelectedIndex()][0];
+
+        // ---- 如果用户把 autoStartServer 从 OFF 改为 ON，立即启动服务器 ----
+        boolean running = ServerController.get().isRunning();
+        if (config.autoStartServer && !prevAutoStart && !running) {
+            try { ServerController.get().start(config, store); }
+            catch (Exception ignored) {}
+        }
 
         boolean bootResult = applyAutostartSetting();
         if (config.minimizeToTray && trayManager != null && !trayManager.isInstalled()) {
@@ -326,10 +439,16 @@ public class MainFrame extends JFrame {
         }
     }
 
+    /** Update the start/stop button label based on current server state. */
+    public void refreshStartStopButton() {
+        boolean running = ServerController.get().isRunning();
+        startStopBtn.setText(running ? I18n.t("btn.restart") : I18n.t("btn.start"));
+    }
+
     /** Refresh all visible UI text when locale changes at runtime. */
     private void applyLocaleToFrame() {
         setTitle(I18n.t("app.title"));
-        startStopBtn.setText(ServerController.get().isRunning() ? I18n.t("btn.stop") : I18n.t("btn.start"));
+        refreshStartStopButton();
         refreshBtn.setText(I18n.t("btn.refresh"));
         exportBtn.setText(I18n.t("btn.export"));
         pruneBtn.setText(I18n.t("btn.prune"));
@@ -359,6 +478,9 @@ public class MainFrame extends JFrame {
 
         // 列标题
         model.fireTableStructureChanged();
+
+        // 菜单栏（重建才能吃到新 locale 的 I18n.t()）
+        setJMenuBar(buildMenuBar());
     }
 
     /** Enable or disable the HKCU Run entry to match config.autostartOnBoot. */
