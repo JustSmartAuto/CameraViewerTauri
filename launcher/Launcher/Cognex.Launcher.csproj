@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>CognexLogging.Launcher</RootNamespace>
+    <AssemblyName>Cognex相机日志服务器</AssemblyName>
+    <ApplicationIcon>assets\app-icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- Costura.Fody 把依赖 dll 嵌入主 exe，实现"单文件"分发 -->
+  <ItemGroup>
+    <PackageReference Include="Costura.Fody" Version="5.8.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- System.IO.Compression.FileSystem 是 .NET Framework 4.8 的 GAC 程序集，但 SDK 风格 csproj 需显式 Reference -->
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <!-- 内嵌资源：payload/jre.zip + payload/app.jar，由 bundle-with-timestamp.sh 先生成这两个文件 -->
+  <ItemGroup>
+    <EmbeddedResource Include="payload\jre.zip" Condition="Exists('payload\jre.zip')">
+      <LogicalName>jre.zip</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="payload\app.jar" Condition="Exists('payload\app.jar')">
+      <LogicalName>app.jar</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Costura 默认把所有引用 dll 都 embed，排除 Fody 自身和非托管文件 -->
+  <PropertyGroup>
+    <CosturaExcludeAssemblies>Fody*</CosturaExcludeAssemblies>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+</Project>

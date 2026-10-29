@@ -28,3 +28,10 @@ Thumbs.db
 # Fat jar outputs (keep only timestamped releases desired)
 audit-log-server-*-fat.jar
 audit-log-server-*-fat_*.jar
+
+# Launcher build artifacts
+launcher/**/bin/
+launcher/**/obj/
+launcher/Launcher/payload/
+launcher/Launcher/FodyWeavers.*
+dist/
