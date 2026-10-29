@@ -4,12 +4,15 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace CognexLogging.Launcher
 {
     /// <summary>
     /// .NET Framework 4.8 单文件启动器（Win10 工控机兼容）：
+    ///   0. 单实例互斥 —— 同名 Mutex 确保只有 1 个 Launcher + 1 个 javaw 跑着；
     ///   1. 优先解压内嵌的精简 JRE（payload/jre.zip）到 %LOCALAPPDATA%\CognexLogging\jre\；
     ///   2. 解压内嵌的 fat jar（payload/app.jar）到 %LOCALAPPDATA%\CognexLogging\app\；
     ///   3. 用内嵌 javaw.exe 启动 fat jar（无需系统预装 Java）；
@@ -22,6 +25,7 @@ namespace CognexLogging.Launcher
         private const string AppDirName = "CognexLogging";
         private const string AppJarName = "audit-log-server.jar";
         private const int RequiredMajor = 25;
+        private const string MutexName = "Global\\CognexLogging.Launcher.SingleInstance.Mutex";
 
         [STAThread]
         private static int Main(string[] args)
@@ -29,24 +33,83 @@ namespace CognexLogging.Launcher
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using (var form = new LauncherForm())
+            // ---------- 单实例互斥 ----------
+            bool createdNew;
+            using (var singleInstance = new Mutex(true, MutexName, out createdNew))
             {
-                form.Shown += (s, e) =>
+                if (!createdNew)
                 {
-                    try { Launch(form); }
-                    catch (Exception ex)
+                    // 已有实例在跑：先尝试找到它的主窗口激活，找不到就静默退出
+                    ActivateExistingMainWindow();
+                    return 0;
+                }
+
+                using (var form = new LauncherForm())
+                {
+                    form.Shown += (s, e) =>
                     {
-                        MessageBox.Show(form,
-                            "启动失败：" + ex.Message + "\n\n" + ex,
-                            "Cognex相机日志服务器",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        Application.Exit();
-                    }
-                };
-                Application.Run(form);
+                        try { Launch(form); }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show(form,
+                                "启动失败：" + ex.Message + "\n\n" + ex,
+                                "Cognex相机日志服务器",
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            Application.Exit();
+                        }
+                    };
+                    Application.Run(form);
+                }
             }
             return 0;
         }
+
+        /// <summary>
+        /// 已有实例在跑时，尝试激活它的 MainFrame 窗口。
+        /// 找不到就静默退出（托盘模式可能隐藏）。
+        /// </summary>
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        private static void ActivateExistingMainWindow()
+        {
+            const int SW_SHOW = 5;
+            IntPtr found = IntPtr.Zero;
+            string titleSubstr = "Cognex相机日志服务器";
+
+            EnumWindows((hWnd, _) =>
+            {
+                if (hWnd == IntPtr.Zero) return true;
+                if (!IsWindowVisible(hWnd)) return true;
+                int len = GetWindowTextLength(hWnd);
+                if (len <= 0) return true;
+                var sb = new System.Text.StringBuilder(len + 1);
+                GetWindowText(hWnd, sb, sb.Capacity);
+                if (sb.ToString().Contains(titleSubstr))
+                {
+                    found = hWnd;
+                    return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            if (found != IntPtr.Zero)
+            {
+                ShowWindow(found, SW_SHOW);
+                SetForegroundWindow(found);
+            }
+            // 托盘模式：窗口可能隐藏在托盘里，找不到也算正常 → 静默退出
+        }
+
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern int GetWindowTextLength(IntPtr hWnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
         private static void Launch(LauncherForm form)
         {

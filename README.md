@@ -127,10 +127,10 @@ FluentdLoggingServer/
 ├── gradle-dist/gradle-9.7.1/          # 可选：本地 Gradle 发行包
 │
 ├── src/main/java/com/auditlog/
-│   ├── AuditLogApp.java               # 入口（theme → H2 → MainFrame → autostart）
+│   ├── AuditLogApp.java               # 入口（单实例锁 → theme → H2 → MainFrame → autostart）
 │   ├── config/AppConfig.java          # 属性加载
+│   ├── config/PathsUtil.java          # 配置/数据库/锁文件目录解析（D 盘优先，%APPDATA% 回退）
 │   ├── i18n/I18n.java                 # 中英文国际化（UTF8 加载 + 托盘菜单强制英文）
-│   ├── paths/PathsUtil.java           # 配置/数据库目录解析（D 盘优先，%APPDATA% 回退）
 │   ├── server/
 │   │   ├── SyslogParser.java          # RFC 5424 解析（含 octet-count + NL framing）
 │   │   ├── SyslogMessage.java         # 解析结果 record
@@ -138,6 +138,7 @@ FluentdLoggingServer/
 │   ├── db/
 │   │   ├── H2Store.java               # H2 内嵌存储（schema / insert / query / prune）
 │   │   └── AuditRow.java              # UI 行 record
+│   ├── util/SingleInstanceLock.java   # 跨进程 FileLock（audit-log-server.lock）
 │   └── ui/
 │       ├── MainFrame.java             # Swing 主窗体（FlatLaf + 过滤 + 菜单维护 + 危险操作二次确认）
 │       ├── TrayManager.java           # 系统托盘（强制英文防 Win10 HWND 乱码）
@@ -154,7 +155,7 @@ FluentdLoggingServer/
 │   ├── build-bundle.ps1               # Launcher 打包（PowerShell）
 │   ├── Launcher/
 │   │   ├── Cognex.Launcher.csproj     # Costura.Fody + net48
-│   │   ├── Program.cs                 # jre.zip/app.jar 解压 + javaw.exe 启动
+│   │   ├── Program.cs                 # Mutex 单实例互斥 + jre.zip/app.jar 解压 + javaw.exe 启动
 │   │   └── OpenJDK25U-jre_*.msi       # 可选：完整 JRE 安装包
 │
 ├── dist/                              # 打包产物（已 .gitignore）
@@ -226,10 +227,22 @@ FluentdLoggingServer/
 
 | 场景 | 防护 |
 | --- | --- |
+| **多实例互斥**（核心） | **双层防护**：① Launcher 端 `Global\\...Mutex` 拦截 EXE 多次双击（第二个 EXE 激活已有窗口后退出）；② Java 端 `FileChannel.tryLock()` 锁 `audit-log-server.lock`，拦截 `java -jar` 多开。进程死亡后锁自动释放，无残留 |
 | 重启服务器（运行中） | ⚠ YES_NO 确认弹窗，显式提示「监听中断期间新到达日志会丢失」 |
 | 清理旧日志 | 双重防护：① 输入弹窗 + 红色警示说明 ② YES_NO 二次确认，默认选 NO |
 | 退出应用 | YES_NO 确认（托盘模式） |
 | 托盘菜单 CJK 乱码 | 强制英文（Win10 原生 HWND 弹窗 + JDK 代码页组合下会失败） |
+
+### 为什么要双层互斥？
+
+实测发现：**便携 Launcher 无任何互斥检查**，现场多次双击 EXE 后同时跑出 4 个 `javaw.exe`，互相抢 5140 端口和 H2 锁文件，导致「单实例却报端口占用 + 数据库占用」。
+
+| 入口 | Launcher Mutex | Java FileLock |
+|------|---------------|---------------|
+| 双击便携 EXE（第一次） | ✅ 拿到 | ✅ 拿到 |
+| 双击便携 EXE（第二次） | ❌ 被拦截，退出 | —（根本没到 javaw） |
+| 直接 `javaw -jar` | —（不经过 Launcher） | ❌ 被拦截，弹提示退出 |
+| 进程被任务管理器杀掉 | Mutex 随进程释放 | FileLock 随进程释放 |
 
 ## 常见问题
 
@@ -244,6 +257,15 @@ A: 便携 EXE **零外部依赖**（.NET Framework 4.8 是 Win10 LTSC 自带组�
 
 ### Q: 启动后没反应？
 A: 托盘模式下默认隐藏主窗体，查看系统托盘区（系统托盘图标是齿轮，tooltip 英文）。
+
+### Q: 提示「软件已在运行」但找不到已有窗口？
+A: 已有实例可能隐藏在系统托盘里（无可见主窗口）。去托盘区右键图标 → 显示，或在任务管理器结束 `javaw.exe` 后重启。
+
+### Q: 任务管理器强杀后再启动，锁文件会残留吗？
+A: **不会**。Mutex（.NET）和 FileLock（Java）都是 OS 级句柄，进程死亡由内核自动回收，不会残留 `audit-log-server.lock`。
+
+### Q: 为什么我会有 4 个 javaw.exe 幽灵进程？
+A: 这是修复前的问题——早期 Launcher 没有单实例互斥，多次双击 EXE 就会 spawn 多个 javaw 同时抢端口和 H2。修复后双层互斥确保无论从哪个入口进来都只有一个实例。
 
 ## 参考资料
 

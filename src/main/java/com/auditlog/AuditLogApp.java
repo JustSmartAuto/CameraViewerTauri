@@ -7,6 +7,7 @@ import com.auditlog.i18n.I18n;
 import com.auditlog.ui.MainFrame;
 import com.auditlog.ui.ServerController;
 import com.auditlog.ui.TrayManager;
+import com.auditlog.util.SingleInstanceLock;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatIntelliJLaf;
 import com.formdev.flatlaf.FlatLaf;
@@ -28,6 +29,16 @@ public final class AuditLogApp {
     private static final Logger log = LoggerFactory.getLogger(AuditLogApp.class);
 
     public static void main(String[] args) {
+        // ---- 单实例互斥：先抢锁，抢不到直接退出 ----
+        SingleInstanceLock lock = SingleInstanceLock.tryAcquire();
+        if (lock == null) {
+            JOptionPane.showMessageDialog(null,
+                    I18n.t("app.already-running"),
+                    I18n.t("dlg.warning"),
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         // Load config from D:\JustSmart\CognexLoggingServer\config\app.properties
         // (or %APPDATA%\CognexLoggingServer\config\app.properties if D: absent).
         Path cfgPath = PathsUtil.configFile();
@@ -98,11 +109,13 @@ public final class AuditLogApp {
         SwingUtilities.invokeLater(tray::showAccordingToPreference);
 
         // Shutdown hook
+        SingleInstanceLock finalLock = lock;
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 tray.uninstall();
                 ServerController.get().stop();
                 store.close();
+                finalLock.close();
             } catch (Exception ignored) {}
         }, "auditlog-shutdown"));
     }
