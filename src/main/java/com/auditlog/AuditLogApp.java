@@ -98,7 +98,15 @@ public final class AuditLogApp {
     private static Image loadIcon() {
         // PNG (converted from data.ico) — JDK handles natively.
         // ICO fallback: extractor supports classic BMP-in-ICO and modern PNG-in-ICO.
-        String[] candidates = {"/data.png", "data.png", "/data.ico", "data.ico"};
+        // candidates order: classpath first (packed inside fat jar), then filesystem (repo root when running from IDE).
+        String[] candidates = {
+                "/data.png",            // classpath — always present in fat jar
+                "/data.ico",            // classpath — always present in fat jar
+                "data.png",             // filesystem — legacy root
+                "data.ico",             // filesystem — legacy root
+                "icons/data.png",       // filesystem — new archive location
+                "icons/data.ico",       // filesystem — new archive location
+        };
         byte[] bytes = null;
         for (String loc : candidates) {
             try (InputStream in = AuditLogApp.class.getResourceAsStream(loc)) {

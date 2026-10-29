@@ -21,7 +21,7 @@ description: Converts Cognex In-Sight Fluentd audit log JSON to human readable X
 ### 1. 运行脚本
 
 ```bash
-python scripts/convert_audit_log.py <json-path> [--outdir DIR] [--prefix NAME] [--tz 8.0]
+python tools/convert_audit_log.py <json-path> [--outdir DIR] [--prefix NAME] [--tz 8.0]
 ```
 
 | 参数 | 默认 | 说明 |
