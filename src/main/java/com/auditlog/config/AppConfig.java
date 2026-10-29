@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Properties;
 
 /**
@@ -26,12 +27,21 @@ public class AppConfig {
     // ---- UI ----
     public int maxTableRows = 100_000;
     public String flatlafTheme = "FlatIntelliJLaf";
+    /** Locale tag, e.g. "zh_CN" or "en_US". Default zh_CN. */
+    public String locale = "zh_CN";
 
-    // ---- Behavior (NEW) ----
+    // ---- Behavior ----
     /** Startup on Windows boot via HKCU Run registry key. Default false. */
     public boolean autostartOnBoot = false;
     /** Auto-minimize to system tray on launch. Default false. */
     public boolean minimizeToTray = false;
+
+    /** Convenience accessor — splits the stored tag back into a Locale. */
+    public Locale asLocale() {
+        String[] parts = locale.split("_");
+        if (parts.length == 2) return new Locale(parts[0], parts[1]);
+        return new Locale(locale);
+    }
 
     public static AppConfig load(Path file) {
         AppConfig cfg = new AppConfig();
@@ -48,6 +58,7 @@ public class AppConfig {
                 cfg.h2DbPath           = p.getProperty("h2.db.path", cfg.h2DbPath);
                 cfg.maxTableRows       = parseInt(p, "ui.max.rows", cfg.maxTableRows);
                 cfg.flatlafTheme       = p.getProperty("ui.theme", cfg.flatlafTheme);
+                cfg.locale             = p.getProperty("ui.locale", cfg.locale);
                 cfg.autostartOnBoot    = Boolean.parseBoolean(p.getProperty("behavior.autostart.boot", String.valueOf(cfg.autostartOnBoot)));
                 cfg.minimizeToTray     = Boolean.parseBoolean(p.getProperty("behavior.minimize.tray", String.valueOf(cfg.minimizeToTray)));
             } catch (IOException ignored) {
@@ -69,6 +80,7 @@ public class AppConfig {
         p.setProperty("h2.db.path", h2DbPath);
         p.setProperty("ui.max.rows", String.valueOf(maxTableRows));
         p.setProperty("ui.theme", flatlafTheme);
+        p.setProperty("ui.locale", locale);
         p.setProperty("behavior.autostart.boot", String.valueOf(autostartOnBoot));
         p.setProperty("behavior.minimize.tray", String.valueOf(minimizeToTray));
 

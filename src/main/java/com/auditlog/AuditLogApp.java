@@ -2,6 +2,7 @@ package com.auditlog;
 
 import com.auditlog.config.AppConfig;
 import com.auditlog.db.H2Store;
+import com.auditlog.i18n.I18n;
 import com.auditlog.ui.MainFrame;
 import com.auditlog.ui.ServerController;
 import com.auditlog.ui.TrayManager;
@@ -30,6 +31,9 @@ public final class AuditLogApp {
         Path cfgPath = Path.of("app.properties");
         AppConfig cfg = AppConfig.load(cfgPath);
 
+        // --- Locale: honour saved preference before any UI is built ---
+        I18n.setLocale(cfg.asLocale());
+
         // Theme
         switch (cfg.flatlafTheme) {
             case "FlatDarkLaf" -> FlatDarkLaf.setup();
@@ -46,8 +50,10 @@ public final class AuditLogApp {
             store = new H2Store(cfg.h2DbPath);
             store.open();
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(null, "Failed to open H2: " + e.getMessage(),
-                    "AuditLog Server", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(null,
+                    "Failed to open H2: " + e.getMessage(),
+                    I18n.t("app.title"),
+                    JOptionPane.ERROR_MESSAGE);
             return;
         }
 

@@ -3,6 +3,7 @@ package com.auditlog.ui;
 import com.auditlog.config.AppConfig;
 import com.auditlog.db.AuditRow;
 import com.auditlog.db.H2Store;
+import com.auditlog.i18n.I18n;
 
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
@@ -16,9 +17,10 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Main Swing frame. Uses FlatLaf theming.
+ * Main Swing frame. Uses FlatLaf theming. All UI strings come from {@link I18n}.
  */
 public class MainFrame extends JFrame {
 
@@ -32,26 +34,25 @@ public class MainFrame extends JFrame {
 
     private final LogTableModel model = new LogTableModel();
     private final JTable table = new JTable(model);
-    private final JLabel statusLabel = new JLabel("● stopped");
-    private final JLabel countLabel = new JLabel("events: 0");
-    private final JComboBox<String> hostCombo = new JComboBox<>(new String[]{"(all)"});
+    private final JLabel statusLabel = new JLabel(I18n.t("status.stopped"));
+    private final JLabel countLabel = new JLabel();
+    private final JComboBox<String> hostCombo = new JComboBox<>();
     private final JSpinner sevMin = new JSpinner(new SpinnerNumberModel(0, 0, 7, 1));
     private final JSpinner sevMax = new JSpinner(new SpinnerNumberModel(7, 0, 7, 1));
-    private final JCheckBox autoScroll = new JCheckBox("auto-scroll to newest", true);
-    private final JButton refreshBtn = new JButton("Refresh");
-    private final JButton startStopBtn = new JButton("Start Server");
-    private final JButton exportBtn = new JButton("Export JSON");
-    private final JButton pruneBtn = new JButton("Prune");
-    private final JButton settingsBtn = new JButton("⚙ Settings");
+    private final JCheckBox autoScroll = new JCheckBox(I18n.t("chk.auto-scroll"), true);
+    private final JButton refreshBtn = new JButton(I18n.t("btn.refresh"));
+    private final JButton startStopBtn = new JButton(I18n.t("btn.start"));
+    private final JButton exportBtn = new JButton(I18n.t("btn.export"));
+    private final JButton pruneBtn = new JButton(I18n.t("btn.prune"));
+    private final JButton settingsBtn = new JButton(I18n.t("btn.settings"));
     private final JSpinner pruneKeep = new JSpinner(new SpinnerNumberModel(100_000, 1000, 10_000_000, 1000));
 
     public MainFrame(AppConfig config, H2Store store, Path configFile) {
-        super("Audit Log Server");
+        super(I18n.t("app.title"));
         this.config = config;
         this.store = store;
         this.configFile = configFile;
 
-        // When minimized, hide to tray so there is no stray taskbar button
         addWindowStateListener(new WindowAdapter() {
             @Override public void windowStateChanged(WindowEvent e) {
                 if ((e.getNewState() & Frame.ICONIFIED) != 0 && trayManager != null && trayManager.isInstalled()) {
@@ -60,7 +61,7 @@ public class MainFrame extends JFrame {
             }
         });
 
-        setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE); // exit handled by tray menu
+        setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
         setSize(1280, 780);
         setLocationRelativeTo(null);
 
@@ -71,7 +72,6 @@ public class MainFrame extends JFrame {
 
     public void setTrayManager(TrayManager tm) {
         this.trayManager = tm;
-        // When user clicks the X button, hide to tray instead of terminating
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) {
                 if (trayManager != null && trayManager.isInstalled()) {
@@ -84,7 +84,6 @@ public class MainFrame extends JFrame {
     }
 
     private void buildUi() {
-        // ---- toolbar ----
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         top.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Separator.foreground")));
 
@@ -96,15 +95,15 @@ public class MainFrame extends JFrame {
 
         top.add(startStopBtn);
         top.add(Box.createHorizontalStrut(12));
-        top.add(new JLabel("Host:"));
+        top.add(new JLabel(I18n.t("lbl.host")));
         hostCombo.setEditable(true);
         hostCombo.setPreferredSize(new Dimension(180, 26));
         hostCombo.addActionListener(e -> refreshData());
         top.add(hostCombo);
         top.add(Box.createHorizontalStrut(6));
-        top.add(new JLabel("Severity min:"));
+        top.add(new JLabel(I18n.t("lbl.severity.min")));
         top.add(sevMin);
-        top.add(new JLabel("max:"));
+        top.add(new JLabel(I18n.t("lbl.severity.max")));
         top.add(sevMax);
         top.add(refreshBtn);
         top.add(Box.createHorizontalStrut(12));
@@ -112,42 +111,40 @@ public class MainFrame extends JFrame {
         top.add(Box.createHorizontalGlue());
         top.add(countLabel);
         top.add(Box.createHorizontalStrut(12));
-        top.add(new JLabel("Keep rows:"));
+        top.add(new JLabel(I18n.t("lbl.keep.rows")));
         top.add(pruneKeep);
         top.add(pruneBtn);
         top.add(Box.createHorizontalStrut(8));
         top.add(settingsBtn);
         top.add(exportBtn);
 
-        // ---- table ----
         table.setAutoCreateRowSorter(true);
         table.setRowHeight(22);
         table.setShowGrid(true);
         table.setGridColor(UIManager.getColor("Table.gridColor"));
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.getColumnModel().getColumn(0).setPreferredWidth(80);   // ts
-        table.getColumnModel().getColumn(1).setPreferredWidth(120);  // host
-        table.getColumnModel().getColumn(2).setPreferredWidth(70);   // sev
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);  // app
-        table.getColumnModel().getColumn(4).setPreferredWidth(90);   // msgid
-        table.getColumnModel().getColumn(5).setPreferredWidth(90);   // src
-        table.getColumnModel().getColumn(6).setPreferredWidth(400);  // msg
-        table.getColumnModel().getColumn(7).setPreferredWidth(600);  // sd
+        table.getColumnModel().getColumn(0).setPreferredWidth(80);
+        table.getColumnModel().getColumn(1).setPreferredWidth(120);
+        table.getColumnModel().getColumn(2).setPreferredWidth(70);
+        table.getColumnModel().getColumn(3).setPreferredWidth(110);
+        table.getColumnModel().getColumn(4).setPreferredWidth(90);
+        table.getColumnModel().getColumn(5).setPreferredWidth(90);
+        table.getColumnModel().getColumn(6).setPreferredWidth(400);
+        table.getColumnModel().getColumn(7).setPreferredWidth(600);
         table.setDefaultRenderer(Object.class, new SevRenderer());
 
         JScrollPane scroll = new JScrollPane(table, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-        // ---- bottom status ----
         JPanel bottom = new JPanel(new BorderLayout(8, 0));
         bottom.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, UIManager.getColor("Separator.foreground")));
         statusLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 0));
         bottom.add(statusLabel, BorderLayout.WEST);
-        JLabel portLabel = new JLabel("port " + config.syslogPort + (config.tlsEnabled ? "  TLS enabled" : ""));
+        JLabel portLabel = new JLabel(I18n.t("status.port", config.syslogPort) +
+                (config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
         portLabel.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 8));
         bottom.add(portLabel, BorderLayout.EAST);
 
-        // ---- split pane ----
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, bottom);
         split.setDividerLocation(680);
         split.setResizeWeight(1.0);
@@ -156,23 +153,22 @@ public class MainFrame extends JFrame {
         add(split, BorderLayout.CENTER);
     }
 
-    // ---- actions ----
-
     private void onStartStop() {
         var controller = ServerController.get();
         if (controller.isRunning()) {
             controller.stop();
-            startStopBtn.setText("Start Server");
-            statusLabel.setText("● stopped");
+            startStopBtn.setText(I18n.t("btn.start"));
+            statusLabel.setText(I18n.t("status.stopped"));
         } else {
             try {
                 controller.start(config, store);
-                startStopBtn.setText("Stop Server");
-                statusLabel.setText("● listening on " + config.syslogPort +
-                        (config.tlsEnabled ? "  (TLS)" : "  (plaintext)"));
+                startStopBtn.setText(I18n.t("btn.stop"));
+                statusLabel.setText(I18n.t("status.listening",
+                        config.syslogPort,
+                        config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this, "Failed to start server: " + e.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, I18n.t("dlg.server-fail", e.getMessage()),
+                        I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -182,7 +178,7 @@ public class MainFrame extends JFrame {
             try {
                 String current = (String) hostCombo.getSelectedItem();
                 hostCombo.removeAllItems();
-                hostCombo.addItem("(all)");
+                hostCombo.addItem(I18n.t("filter.all"));
                 for (String h : store.distinctHostnames(100)) {
                     hostCombo.addItem(h);
                 }
@@ -195,9 +191,13 @@ public class MainFrame extends JFrame {
         SwingUtilities.invokeLater(() -> {
             try {
                 String hostFilter = (String) hostCombo.getSelectedItem();
-                if (hostFilter != null && hostFilter.isBlank()) hostFilter = null;
-                else if ("(all)".equals(hostFilter)) hostFilter = null;
-                else if (hostFilter != null && !hostFilter.contains("%")) hostFilter = hostFilter + "%";
+                // key-insensitive: 判断 "全部" / "All" / "(all)" 的稳定标识 —— 空 / 当前 locale 显示值
+                String all = I18n.t("filter.all");
+                if (hostFilter == null || hostFilter.isBlank() || all.equals(hostFilter)) {
+                    hostFilter = null;
+                } else if (!hostFilter.contains("%")) {
+                    hostFilter = hostFilter + "%";
+                }
 
                 int sevMinV = (Integer) sevMin.getValue();
                 int sevMaxV = (Integer) sevMax.getValue();
@@ -205,13 +205,13 @@ public class MainFrame extends JFrame {
                 long total = store.totalCount();
                 var rows = store.query(hostFilter, sevMinV, sevMaxV, 0, config.maxTableRows);
                 model.setRows(rows);
-                countLabel.setText("events: " + total + "  shown: " + rows.size());
+                countLabel.setText(I18n.t("status.events", total, rows.size()));
 
                 if (autoScroll.isSelected() && !rows.isEmpty()) {
                     table.scrollRectToVisible(table.getCellRect(0, 0, true));
                 }
             } catch (Exception e) {
-                countLabel.setText("error: " + e.getMessage());
+                countLabel.setText(I18n.t("status.error", e.getMessage()));
             }
         });
     }
@@ -223,7 +223,8 @@ public class MainFrame extends JFrame {
         if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
         var controller = ServerController.get();
         controller.exportJson(fc.getSelectedFile().toPath());
-        JOptionPane.showMessageDialog(this, "Exported to " + fc.getSelectedFile().getAbsolutePath());
+        JOptionPane.showMessageDialog(this, I18n.t("dlg.export-done", fc.getSelectedFile().getAbsolutePath()),
+                I18n.t("dlg.info"), JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void onPrune() {
@@ -231,23 +232,34 @@ public class MainFrame extends JFrame {
         try {
             int removed = store.prune(keep);
             refreshData();
-            JOptionPane.showMessageDialog(this, "Pruned " + removed + " rows. Current total: " + store.totalCount());
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.prune-done", removed, store.totalCount()),
+                    I18n.t("dlg.info"), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Prune failed: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.prune-fail", e.getMessage()),
+                    I18n.t("dlg.error"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void onOpenSettings() {
-        // ---- Build a modal panel with the two new checkboxes ----
-        JCheckBox bootCheck = new JCheckBox("开机自动启动（Windows 仅当前用户 HKCU Run 注册表）", config.autostartOnBoot);
-        JCheckBox trayCheck = new JCheckBox("启动时自动最小化到托盘（需要托盘支持）", config.minimizeToTray);
+        // ---- 语言下拉 ----
+        JComboBox<String> langCombo = new JComboBox<>();
+        for (var pair : I18n.SUPPORTED) langCombo.addItem(pair[1]); // display name
+        // 匹配当前 config.locale → SUPPORTED[i][0]
+        int selIdx = 0;
+        for (int i = 0; i < I18n.SUPPORTED.length; i++) {
+            if (I18n.SUPPORTED[i][0].equals(config.locale)) { selIdx = i; break; }
+        }
+        langCombo.setSelectedIndex(selIdx);
+
+        JCheckBox bootCheck = new JCheckBox(I18n.t("chk.boot-autostart"), config.autostartOnBoot);
+        JCheckBox trayCheck = new JCheckBox(I18n.t("chk.minimize-to-tray"), config.minimizeToTray);
         if (!TrayManager.isSupportedStatic()) {
             trayCheck.setEnabled(false);
-            trayCheck.setToolTipText("当前系统不支持系统托盘");
+            trayCheck.setToolTipText(I18n.t("chk.minimize-to-tray.tooltip"));
         }
         if (!WinAutostart.isWindows()) {
             bootCheck.setEnabled(false);
-            bootCheck.setToolTipText("非 Windows 平台不支持 HKCU Run");
+            bootCheck.setToolTipText(I18n.t("chk.boot-autostart.tooltip"));
         }
 
         JPanel box = new JPanel(new GridBagLayout());
@@ -256,58 +268,105 @@ public class MainFrame extends JFrame {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.gridx = 0; gbc.gridy = 0;
         gbc.gridwidth = 2;
-        box.add(new JLabel("<html><b>行为设置</b></html>"), gbc);
+        box.add(new JLabel(I18n.t("dlg.settings.behavior")), gbc);
 
+        gbc.gridwidth = 1;
         gbc.gridy++;
+        box.add(new JLabel(I18n.t("dlg.language")), gbc);
+        gbc.gridx = 1;
+        gbc.gridwidth = 1;
+        box.add(langCombo, gbc);
+
+        gbc.gridx = 0; gbc.gridwidth = 2; gbc.gridy++;
         box.add(bootCheck, gbc);
         gbc.gridy++;
         box.add(trayCheck, gbc);
 
-        int res = JOptionPane.showConfirmDialog(this, box, "Settings / 设置",
+        int res = JOptionPane.showConfirmDialog(this, box,
+                I18n.t("dlg.settings.title"),
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (res != JOptionPane.OK_OPTION) return;
 
         config.autostartOnBoot = bootCheck.isSelected();
         config.minimizeToTray  = trayCheck.isSelected();
+        // 语言：取 SUPPORTED[selIdx][0]
+        config.locale = I18n.SUPPORTED[langCombo.getSelectedIndex()][0];
 
-        // ---- Apply autostart immediately ----
         boolean bootResult = applyAutostartSetting();
-        // ---- Apply minimize-to-tray immediately (affects next launch only, but validate) ----
         if (config.minimizeToTray && trayManager != null && !trayManager.isInstalled()) {
             trayManager.install();
         }
 
-        // ---- Persist ----
+        // ---- 立即切换 locale 并整页刷新 ----
+        I18n.setLocale(config.asLocale());
+        applyLocaleToFrame();
+        trayManager.onLocaleChanged();
+
+        // ---- 持久化 ----
         try {
             config.save(configFile);
         } catch (IOException ex) {
-            JOptionPane.showMessageDialog(this, "Failed to save settings: " + ex.getMessage(),
-                    "Warning", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, I18n.t("dlg.save-fail", ex.getMessage()),
+                    I18n.t("dlg.warning"), JOptionPane.WARNING_MESSAGE);
         }
+
+        String on   = I18n.t("lbl.on");
+        String off  = I18n.t("lbl.off");
+        String bootState  = config.autostartOnBoot ? on : off;
+        String trayState  = config.minimizeToTray  ? on : off;
 
         if (!bootResult) {
             JOptionPane.showMessageDialog(this,
-                    "启动项已" + (config.autostartOnBoot ? "启用" : "停用") + "，但写注册表失败。\n" +
-                    "尝试以管理员身份运行后重试。",
-                    "Audit Log Server", JOptionPane.WARNING_MESSAGE);
+                    I18n.t("dlg.autostart-warn", bootState),
+                    I18n.t("app.title"), JOptionPane.WARNING_MESSAGE);
         } else {
             JOptionPane.showMessageDialog(this,
-                    "设置已保存：\n" +
-                    "  开机启动: " + (config.autostartOnBoot ? "ON" : "OFF") + "\n" +
-                    "  启动最小化到托盘: " + (config.minimizeToTray ? "ON" : "OFF"),
-                    "Audit Log Server", JOptionPane.INFORMATION_MESSAGE);
+                    I18n.t("dlg.settings-saved", bootState, trayState),
+                    I18n.t("app.title"), JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    /** Refresh all visible UI text when locale changes at runtime. */
+    private void applyLocaleToFrame() {
+        setTitle(I18n.t("app.title"));
+        startStopBtn.setText(ServerController.get().isRunning() ? I18n.t("btn.stop") : I18n.t("btn.start"));
+        refreshBtn.setText(I18n.t("btn.refresh"));
+        exportBtn.setText(I18n.t("btn.export"));
+        pruneBtn.setText(I18n.t("btn.prune"));
+        settingsBtn.setText(I18n.t("btn.settings"));
+        autoScroll.setText(I18n.t("chk.auto-scroll"));
+
+        // status label
+        if (ServerController.get().isRunning()) {
+            statusLabel.setText(I18n.t("status.listening",
+                    config.syslogPort,
+                    config.tlsEnabled ? I18n.t("status.tls.enabled") : I18n.t("status.tls.disabled")));
+        } else {
+            statusLabel.setText(I18n.t("status.stopped"));
+        }
+
+        // host combo: 需要重建 all 项 — 已选中的具体 hostname 保持选中
+        String currentHost = (String) hostCombo.getSelectedItem();
+        hostCombo.removeAllItems();
+        hostCombo.addItem(I18n.t("filter.all"));
+        try {
+            for (String h : store.distinctHostnames(100)) hostCombo.addItem(h);
+        } catch (Exception ignored) {}
+        if (currentHost != null) hostCombo.setSelectedItem(currentHost);
+
+        // count label 由 refreshData 会重填
+        refreshData();
+
+        // 列标题
+        model.fireTableStructureChanged();
     }
 
     /** Enable or disable the HKCU Run entry to match config.autostartOnBoot. */
     private boolean applyAutostartSetting() {
-        if (!WinAutostart.isWindows()) return true; // no-op, pretend success
+        if (!WinAutostart.isWindows()) return true;
         try {
             Path jarPath = TrayManager.resolveJarPath();
-            if (jarPath == null) {
-                // Running from IDE — skip silently, don't reg an invalid path
-                return false;
-            }
+            if (jarPath == null) return false; // running from IDE
             if (config.autostartOnBoot) WinAutostart.enable(jarPath);
             else                         WinAutostart.disable();
             return true;
@@ -316,26 +375,25 @@ public class MainFrame extends JFrame {
         }
     }
 
-    // ---- inbound event push from server thread ----
     public void appendRow(AuditRow row) {
         model.addRow(row);
     }
 
     // ---- table model ----
-    static class LogTableModel extends AbstractTableModel {
-        private final String[] cols = {"Time", "Host", "Sev", "App", "MsgId", "Source IP", "Message", "Structured Data"};
+    class LogTableModel extends AbstractTableModel {
+        private final String[] colKeys = {"col.time", "col.host", "col.sev", "col.app", "col.msgid", "col.srcip", "col.message", "col.structured"};
         private List<AuditRow> rows = new ArrayList<>();
 
         void setRows(List<AuditRow> r) { rows = r; fireTableDataChanged(); }
         void addRow(AuditRow r) {
             rows.addFirst(r);
-            if (rows.size() > 5000) rows.removeLast(); // safety cap for auto-inbound
+            if (rows.size() > 5000) rows.removeLast();
             fireTableRowsInserted(0, 0);
         }
 
         @Override public int getRowCount() { return rows.size(); }
-        @Override public int getColumnCount() { return cols.length; }
-        @Override public String getColumnName(int c) { return cols[c]; }
+        @Override public int getColumnCount() { return colKeys.length; }
+        @Override public String getColumnName(int c) { return I18n.t(colKeys[c]); }
         @Override public boolean isCellEditable(int r, int c) { return false; }
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {

@@ -1,6 +1,7 @@
 package com.auditlog.ui;
 
 import com.auditlog.config.AppConfig;
+import com.auditlog.i18n.I18n;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +20,8 @@ import java.nio.file.Path;
  *   <li>Auto-hide the main frame on launch when {@code minimizeToTray=true}</li>
  *   <li>Restore the frame when the tray icon is double-clicked</li>
  * </ul>
- * Gracefully degrades when the OS does not support a system tray.
+ * Popup menu labels honour the current {@link I18n} locale and rebuild on
+ * {@link #onLocaleChanged()}.
  */
 public class TrayManager {
 
@@ -47,11 +49,9 @@ public class TrayManager {
         tray = SystemTray.getSystemTray();
 
         Image img = icon != null ? icon : placeholderIcon();
-        PopupMenu menu = buildMenu();
-        trayIcon = new TrayIcon(img, "Audit Log Server", menu);
+        trayIcon = new TrayIcon(img, I18n.t("tray.title"), buildMenu());
         trayIcon.setImageAutoSize(true);
 
-        // Double-click / single click behavior
         trayIcon.addActionListener(e -> SwingUtilities.invokeLater(this::restoreFrame));
         trayIcon.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
@@ -79,9 +79,7 @@ public class TrayManager {
 
     /** Hide main frame into tray (just icon, no taskbar). */
     public void hideFrame() {
-        if (installed) {
-            frame.setVisible(false);
-        }
+        if (installed) frame.setVisible(false);
     }
 
     /** Bring the main frame back on screen. */
@@ -92,35 +90,39 @@ public class TrayManager {
         frame.requestFocus();
     }
 
-    /**
-     * Minimize to tray on first launch — skips flashing the window when
-     * {@code behavior.minimize.tray=true}.
-     */
+    /** Minimize to tray on first launch. */
     public void showAccordingToPreference() {
-        if (config.minimizeToTray && installed) {
-            hideFrame();
-        } else {
-            frame.setVisible(true);
+        if (config.minimizeToTray && installed) hideFrame();
+        else frame.setVisible(true);
+    }
+
+    /** Re-translate the popup menu after a runtime locale change. */
+    public synchronized void onLocaleChanged() {
+        if (trayIcon != null) {
+            trayIcon.setToolTip(I18n.t("tray.title"));
+            trayIcon.setPopupMenu(buildMenu());
         }
     }
 
     private PopupMenu buildMenu() {
         PopupMenu m = new PopupMenu();
 
-        MenuItem showItem = new MenuItem("Show / 显示");
+        MenuItem showItem = new MenuItem(I18n.t("tray.show"));
         showItem.addActionListener(e -> SwingUtilities.invokeLater(this::restoreFrame));
         m.add(showItem);
 
-        MenuItem hideItem = new MenuItem("Hide / 隐藏");
+        MenuItem hideItem = new MenuItem(I18n.t("tray.hide"));
         hideItem.addActionListener(e -> hideFrame());
         m.add(hideItem);
 
         m.addSeparator();
 
-        MenuItem exitItem = new MenuItem("Exit / 退出");
+        MenuItem exitItem = new MenuItem(I18n.t("tray.exit"));
         exitItem.addActionListener(e -> {
-            int r = JOptionPane.showConfirmDialog(frame, "Really exit Audit Log Server?",
-                    "Confirm", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            int r = JOptionPane.showConfirmDialog(frame,
+                    I18n.t("tray.exit.confirm"),
+                    I18n.t("dlg.confirm"),
+                    JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
             if (r == JOptionPane.YES_OPTION) {
                 frame.dispose();
                 System.exit(0);
@@ -131,13 +133,13 @@ public class TrayManager {
         return m;
     }
 
-    /** Bubble notification via tray (when something interesting arrives). */
+    /** Bubble notification via tray. */
     public void notify(String title, String body) {
         if (!installed) return;
         trayIcon.displayMessage(title, body, TrayIcon.MessageType.INFO);
     }
 
-    /** Return the jar we're running from, if discoverable (needed for autostart command). */
+    /** Return the jar we're running from, if discoverable. */
     public static Path resolveJarPath() {
         String codeSrc = TrayManager.class.getProtectionDomain()
                 .getCodeSource().getLocation().toExternalForm();
@@ -150,7 +152,7 @@ public class TrayManager {
         return null;
     }
 
-    /** Minimal 16×16 placeholder drawn programmatically — used if icon loading fails. */
+    /** Minimal 16×16 placeholder drawn programmatically. */
     private static Image placeholderIcon() {
         int size = 16;
         java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
