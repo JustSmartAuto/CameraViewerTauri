@@ -1,6 +1,6 @@
 # build-with-timestamp.ps1 — Windows 版打包脚本
 # 用法: .\build-with-timestamp.ps1
-# 功能: 执行 gradle fatJar，将产物追加时间戳后缀复制到项目根目录
+# 功能: 执行 gradle fatJar，将产物直接重命名为带时间戳后缀的文件名（移动，不保留基础 jar）
 
 param()
 
@@ -45,8 +45,14 @@ $base = [System.IO.Path]::GetFileNameWithoutExtension($jarFile.Name)
 # 去掉可能已存在的尾部 _时间戳 后缀（13 位以上数字）
 $stem = ($base -replace '_[0-9]{13,}$', '')
 $newName = "$stem`_$ts.jar"
+$dest = Join-Path $ScriptDir $newName
 
-Write-Host "Copying $($jarFile.Name) -> $newName"
-Copy-Item -Force $jarFile.FullName (Join-Path $ScriptDir $newName)
+# ---- 5. 直接移动（不保留原文件） ----
+if ($jarFile.FullName -ieq $dest) {
+    Write-Host "Already named $newName — nothing to do"
+} else {
+    Write-Host "Moving $($jarFile.Name) -> $newName"
+    Move-Item -Force $jarFile.FullName $dest
+}
 
 Write-Host "Done: $newName"

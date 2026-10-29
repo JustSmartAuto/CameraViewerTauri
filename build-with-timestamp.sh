@@ -36,8 +36,12 @@ else
     NEW_NAME="${BASENAME%.jar}_${TIMESTAMP}.jar"
 fi
 
-# 复制到项目根目录
-echo "Copying $JAR_FILE -> $NEW_NAME"
-cp "$JAR_FILE" "$NEW_NAME"
+# 直接重命名（移动，不保留基础 jar）
+if [ "$BASENAME" = "$NEW_NAME" ]; then
+    echo "Already named $NEW_NAME — nothing to do"
+else
+    echo "Moving $BASENAME -> $NEW_NAME"
+    mv -f "$JAR_FILE" "$NEW_NAME"
+fi
 
 echo "Done: $NEW_NAME"
