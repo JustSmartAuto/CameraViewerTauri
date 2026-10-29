@@ -1,5 +1,6 @@
 package com.auditlog.ui;
 
+import com.auditlog.AppShutdown;
 import com.auditlog.config.AppConfig;
 import com.auditlog.db.AuditRow;
 import com.auditlog.db.H2Store;
@@ -61,7 +62,7 @@ public class MainFrame extends JFrame {
             }
         });
 
-        setDefaultCloseOperation(WindowConstants.HIDE_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         setSize(1280, 780);
         setLocationRelativeTo(null);
 
@@ -74,13 +75,43 @@ public class MainFrame extends JFrame {
         this.trayManager = tm;
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) {
-                if (trayManager != null && trayManager.isInstalled()) {
-                    trayManager.hideFrame();
-                } else {
-                    System.exit(0);
-                }
+                onWindowClosingRequest();
             }
         });
+    }
+
+    /**
+     * 关闭窗口时二选一：最小化到托盘 / 退出程序（默认最小化，可取消）。
+     * 托盘不可用时直接走有序退出。
+     */
+    private void onWindowClosingRequest() {
+        if (AppShutdown.isExitRequested()) return;   // 已在退出流程中，忽略重复关闭
+        if (trayManager == null || !trayManager.isInstalled()) {
+            requestExit();
+            return;
+        }
+        Object[] options = {
+                I18n.t("dlg.close.minimize-to-tray"),
+                I18n.t("dlg.close.exit"),
+                I18n.t("dlg.close.cancel")
+        };
+        int choice = JOptionPane.showOptionDialog(this,
+                I18n.t("dlg.close.message"),
+                I18n.t("dlg.close.title"),
+                JOptionPane.YES_NO_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]);
+        switch (choice) {
+            case 0 -> trayManager.hideFrame();
+            case 1 -> requestExit();
+            default -> { /* 取消 / 关闭对话框 —— 保持窗口打开 */ }
+        }
+    }
+
+    /** 有序退出：先隐藏界面给用户即时反馈，再在后台完成清理后才结束进程。 */
+    private void requestExit() {
+        setVisible(false);
+        AppShutdown.exit(0);
     }
 
     private void buildUi() {
@@ -184,7 +215,7 @@ public class MainFrame extends JFrame {
                     I18n.t("tray.exit.confirm"),
                     I18n.t("dlg.confirm"),
                     JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-            if (r == JOptionPane.YES_OPTION) { dispose(); System.exit(0); }
+            if (r == JOptionPane.YES_OPTION) requestExit();
         });
         mFile.add(miExit);
 

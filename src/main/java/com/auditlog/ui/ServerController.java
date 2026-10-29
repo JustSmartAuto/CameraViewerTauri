@@ -6,6 +6,8 @@ import com.auditlog.db.H2Store;
 import com.auditlog.server.SyslogMessage;
 import com.auditlog.server.SyslogServer;
 import com.google.gson.Gson;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.io.BufferedWriter;
@@ -24,6 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * passing references up/down.
  */
 public class ServerController {
+
+    private static final Logger log = LoggerFactory.getLogger(ServerController.class);
 
     private static final ServerController INSTANCE = new ServerController();
 
@@ -57,9 +61,36 @@ public class ServerController {
     public synchronized void stop() {
         SyslogServer s = server.getAndSet(null);
         if (s != null) s.stop();
-        if (livePusher != null) {
-            livePusher.shutdownNow();
-            livePusher = null;
+        stopPusher(2);
+    }
+
+    /**
+     * 退出流程专用：停服务器 → 等写库线程结束 → 把入站队列里剩余日志
+     * 全部落库。必须在 {@code store.close()} 之前调用，否则退出时丢日志。
+     */
+    public synchronized void stopAndFlush() {
+        SyslogServer s = server.getAndSet(null);
+        if (s != null) s.stop();
+        stopPusher(5);
+        int flushed = flushInbound(Integer.MAX_VALUE);
+        if (flushed > 0) log.info("flushed {} pending log events on shutdown", flushed);
+        if (!inbound.isEmpty()) log.warn("{} log events could not be persisted before exit", inbound.size());
+    }
+
+    /** 停止定时写库线程；超时未结束则强制中断。 */
+    private void stopPusher(long awaitSeconds) {
+        ScheduledExecutorService p = livePusher;
+        livePusher = null;
+        if (p == null) return;
+        p.shutdown();
+        try {
+            if (!p.awaitTermination(awaitSeconds, TimeUnit.SECONDS)) {
+                p.shutdownNow();
+                p.awaitTermination(1, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            p.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -74,10 +105,13 @@ public class ServerController {
         return s != null && s.isRunning();
     }
 
-    private void flushInbound() {
+    private void flushInbound() { flushInbound(200); }
+
+    /** 按批取队列写入 DB/UI，返回实际落库条数；maxBatch 为 Integer.MAX_VALUE 时全量冲刷。 */
+    private int flushInbound(int maxBatch) {
         SyslogMessage m;
         int batch = 0;
-        while ((m = inbound.poll()) != null && batch < 200) {
+        while (batch < maxBatch && (m = inbound.poll()) != null) {
             batch++;
             try {
                 String sdJson = gson.toJson(m.structuredData());
@@ -92,7 +126,7 @@ public class ServerController {
                 }
             } catch (Exception ignored) {}
         }
-        // also refresh host list occasionally
+        return batch;
     }
 
     public void exportJson(Path target) {

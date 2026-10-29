@@ -29,7 +29,6 @@ public final class AuditLogApp {
     private static final Logger log = LoggerFactory.getLogger(AuditLogApp.class);
 
     public static void main(String[] args) {
-        // ---- 单实例互斥：先抢锁，抢不到直接退出 ----
         SingleInstanceLock lock = SingleInstanceLock.tryAcquire();
         if (lock == null) {
             JOptionPane.showMessageDialog(null,
@@ -38,6 +37,8 @@ public final class AuditLogApp {
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
+        // 登记单实例锁 + 安装兜底 shutdown hook（Ctrl+C / 系统结束进程时也能有序清理）
+        AppShutdown.init(lock);
 
         // Load config from D:\JustSmart\CognexLoggingServer\config\app.properties
         // (or %APPDATA%\CognexLoggingServer\config\app.properties if D: absent).
@@ -62,6 +63,7 @@ public final class AuditLogApp {
         try {
             store = new H2Store(cfg.h2DbPath);
             store.open();
+            AppShutdown.setStore(store);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(null,
                     "Failed to open H2: " + e.getMessage(),
@@ -88,6 +90,7 @@ public final class AuditLogApp {
         TrayManager tray = new TrayManager(frame, cfg, icon);
         frame.setTrayManager(tray);
         tray.install();
+        AppShutdown.setTray(tray);
 
         // Auto-start server if either:
         //   a) the "启动软件后自动启动服务器" setting is true (default), or
@@ -107,17 +110,6 @@ public final class AuditLogApp {
         }
 
         SwingUtilities.invokeLater(tray::showAccordingToPreference);
-
-        // Shutdown hook
-        SingleInstanceLock finalLock = lock;
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                tray.uninstall();
-                ServerController.get().stop();
-                store.close();
-                finalLock.close();
-            } catch (Exception ignored) {}
-        }, "auditlog-shutdown"));
     }
 
     /** Try icon from the packaged resource first, fall back to a root-dir file. */

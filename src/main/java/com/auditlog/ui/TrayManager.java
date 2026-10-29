@@ -1,5 +1,6 @@
 package com.auditlog.ui;
 
+import com.auditlog.AppShutdown;
 import com.auditlog.config.AppConfig;
 import com.auditlog.i18n.I18n;
 import org.slf4j.Logger;
@@ -141,8 +142,9 @@ public class TrayManager {
                     I18n.t("dlg.confirm"),
                     JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
             if (r == JOptionPane.YES_OPTION) {
-                frame.dispose();
-                System.exit(0);
+                // 走统一的有序退出：先停服务器、冲刷日志、关库、释放锁，再结束进程
+                frame.setVisible(false);
+                AppShutdown.exit(0);
             }
         });
         m.add(exitItem);

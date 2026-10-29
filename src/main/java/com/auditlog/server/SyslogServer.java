@@ -21,6 +21,7 @@ import java.security.KeyStore;
 import java.time.Instant;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -98,7 +99,18 @@ public class SyslogServer {
     public synchronized void stop() {
         running = false;
         try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
-        try { if (pool != null) pool.shutdownNow(); } catch (Exception ignored) {}
+        ExecutorService p = pool;
+        if (p != null) {
+            p.shutdownNow();
+            try {
+                // 等客户端处理线程收尾，避免退出时还有线程在写库
+                if (!p.awaitTermination(3, TimeUnit.SECONDS)) {
+                    log.warn("syslog client handlers did not terminate in time");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         log.info("Syslog server stopped");
     }
 

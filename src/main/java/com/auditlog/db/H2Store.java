@@ -177,9 +177,22 @@ public class H2Store implements AutoCloseable {
     }
 
     @Override
-    public synchronized void close() throws SQLException {
-        if (conn != null && !conn.isClosed()) {
-            try { conn.close(); } finally { conn = null; }
+    public synchronized void close() {
+        if (conn == null) return;
+        try {
+            // DB_CLOSE_DELAY=-1 会让数据库在连接关闭后仍保持打开 —— 必须显式
+            // 执行 SHUTDOWN，才能真正关闭 .mv.db、释放文件句柄后再退出进程。
+            try (var st = conn.createStatement()) {
+                st.execute("SHUTDOWN");
+            } catch (SQLException e) {
+                log.warn("H2 SHUTDOWN failed: {}", e.getMessage());
+            }
+            try {
+                if (!conn.isClosed()) conn.close();
+            } catch (SQLException ignored) {}
+            log.info("H2 store closed");
+        } finally {
+            conn = null;
         }
     }
 }
