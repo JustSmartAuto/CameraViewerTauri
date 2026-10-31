@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import unicodedata
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -36,6 +37,53 @@ STATUS_TEXT = {
 }
 
 
+def _display_width(text: str) -> int:
+    """按显示宽度计算字符数（全角/CJK 记 2，其余记 1）。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def _elide(text: str, limit: int) -> str:
+    """把过长文本截断为 limit 个显示宽度，末尾加省略号，避免撑破面板布局。"""
+    if _display_width(text) <= limit:
+        return text
+    width, out = 0, []
+    for ch in text:
+        w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if width + w > limit - 1:
+            break
+        width += w
+        out.append(ch)
+    return "".join(out) + "…"
+
+
+class Tooltip:
+    """鼠标悬停时显示完整文本（配合被截断的标签）。"""
+
+    def __init__(self, widget: tk.Widget):
+        self.widget = widget
+        self.text = ""
+        self._tip: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _event=None) -> None:
+        if not self.text or self._tip:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._tip = tk.Toplevel(self.widget)
+        self._tip.wm_overrideredirect(True)
+        self._tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self._tip, text=self.text, bg="#ffffe1", fg=C["ink"],
+                 font=theme.FONT, justify="left", anchor="w", wraplength=460,
+                 relief="solid", bd=1, padx=4, pady=2).pack()
+
+    def _hide(self, _event=None) -> None:
+        if self._tip:
+            self._tip.destroy()
+            self._tip = None
+
+
 class CameraPanel(tk.Frame):
     """单相机面板（BeOS 窗口）：黄色标题页签、白色内容区、药丸按钮。"""
 
@@ -46,6 +94,7 @@ class CameraPanel(tk.Frame):
         self.cfg = cfg
         self.status = "offline"
         self.value_labels: dict[str, tk.Label] = {}
+        self._value_tips: dict[str, Tooltip] = {}
 
         tab_text = f"{cfg.name}  ({cfg.host}:{cfg.port})"
         bar, self.status_label = theme.title_tab(self, tab_text, STATUS_TEXT["offline"])
@@ -65,14 +114,18 @@ class CameraPanel(tk.Frame):
             label_text = f"{cell.name} {prefix}".strip()
             if cell.note:
                 label_text += f"（{cell.note}）"
-            tk.Label(row, text=label_text, width=34, anchor="w",
-                     bg=C["chrome_lighter"], fg=C["ink"], font=theme.FONT).pack(side="left")
-            value = tk.Label(row, text="—", bg=C["chrome_lighter"], fg=C["teal"],
-                             font=("Arial", 11, "bold"))
+            name_label = tk.Label(row, text=_elide(label_text, 16), width=16, anchor="w",
+                                  bg=C["chrome_lighter"], fg=C["ink"], font=theme.FONT)
+            name_label.pack(side="left")
+            name_tip = Tooltip(name_label)
+            name_tip.text = label_text
+            value = tk.Label(row, text="—", width=14, anchor="w", bg=C["chrome_lighter"],
+                             fg=C["teal"], font=("Arial", 11, "bold"))
             value.pack(side="left")
             self.value_labels[cell.name] = value
+            self._value_tips[cell.name] = Tooltip(value)
             if cell.is_simple_record:
-                tk.Label(row, text="（仅记录·不判定）", bg=C["chrome_lighter"],
+                tk.Label(row, text="仅记录", bg=C["chrome_lighter"],
                          fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
             elif cell.is_numeric:
                 limits = ""
@@ -84,7 +137,7 @@ class CameraPanel(tk.Frame):
                     tk.Label(row, text=limits, bg=C["chrome_lighter"],
                              fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
             elif cell.data_type in ("string", "bool", "other"):
-                tk.Label(row, text="（非数值·无阈值）", bg=C["chrome_lighter"],
+                tk.Label(row, text="无阈值", bg=C["chrome_lighter"],
                          fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
 
         btns = tk.Frame(self, bg=C["chrome"])
@@ -105,7 +158,11 @@ class CameraPanel(tk.Frame):
     def set_value(self, cell: str, value) -> None:
         label = self.value_labels.get(cell)
         if label:
-            label.config(text=str(value))
+            text = "—" if value is None else str(value)
+            label.config(text=_elide(text, 14))
+            tip = self._value_tips.get(cell)
+            if tip:
+                tip.text = text
 
 
 class MonitorApp:
@@ -119,7 +176,8 @@ class MonitorApp:
 
         self.root = tk.Tk()
         self.root.title("CameraCellMonitor — Cognex In-Sight 单元格数据监控器")
-        self.root.geometry("800x600")
+        self.root.geometry("1100x700")
+        self.root.minsize(1060, 600)
         theme.apply(self.root)
         self._build_ui()
         self._start_asyncio_thread()
@@ -140,8 +198,20 @@ class MonitorApp:
         tk.Label(bar, text=f"数据目录: {self.data_dir}", bg=C["chrome"],
                  fg=C["chrome_darker"], font=theme.FONT).pack(side="right", padx=6)
 
-        self.grid_frame = tk.Frame(self.root, bg=C["bg"])
-        self.grid_frame.pack(fill="both", expand=True, padx=6, pady=4)
+        # 网格放在 Canvas 中，纵向可滚动（相机数量多时不会裁切）
+        self.grid_outer = tk.Frame(self.root, bg=C["bg"])
+        self.grid_outer.pack(fill="both", expand=True, padx=6, pady=4)
+        self.grid_canvas = tk.Canvas(self.grid_outer, bg=C["bg"], highlightthickness=0, bd=0)
+        self.grid_vbar = ttk.Scrollbar(self.grid_outer, orient="vertical",
+                                       command=self.grid_canvas.yview)
+        self.grid_canvas.configure(yscrollcommand=self.grid_vbar.set)
+        self.grid_canvas.pack(side="left", fill="both", expand=True)
+        self.grid_vbar.pack(side="right", fill="y")
+        self.grid_frame = tk.Frame(self.grid_canvas, bg=C["bg"])
+        self._grid_window = self.grid_canvas.create_window((0, 0), window=self.grid_frame, anchor="nw")
+        self.grid_frame.bind("<Configure>", self._on_grid_configure)
+        self.grid_canvas.bind("<Configure>", self._on_canvas_configure)
+        self.root.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
         self._rebuild_grid()
 
         logbox = theme.window_frame(self.root)
@@ -207,7 +277,27 @@ class MonitorApp:
             panel.grid(row=i // cols, column=i % cols, sticky="nsew", padx=5, pady=5)
             self.panels[cfg.name] = panel
         for c in range(cols):
-            self.grid_frame.columnconfigure(c, weight=1)
+            self.grid_frame.columnconfigure(c, weight=1, uniform="camcol")
+        self.grid_canvas.yview_moveto(0)
+        self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox("all"))
+
+    # ---------- 网格滚动 ----------
+
+    def _on_grid_configure(self, _event=None) -> None:
+        self.grid_canvas.configure(scrollregion=self.grid_canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event) -> None:
+        # 让内层网格宽度始终等于画布可视宽度，三列随窗口自适应
+        self.grid_canvas.itemconfigure(self._grid_window, width=event.width)
+
+    def _on_mousewheel(self, event) -> None:
+        # 仅当鼠标位于网格区域（含滚动条）内才滚动，避免抢走日志区的滚轮
+        target = self.root.winfo_containing(event.x_root, event.y_root)
+        while target is not None and target not in (self.grid_canvas, self.grid_outer):
+            target = getattr(target, "master", None)
+        if target is None:
+            return
+        self.grid_canvas.yview_scroll(int(-event.delta / 120), "units")
 
     # ---------- asyncio 线程 ----------
 
