@@ -39,6 +39,17 @@
 | `assets/app_icon.ico` | 应用图标（由 `monitor.jpg` 拉伸方形 + 16% 圆角生成） |
 | `assets/monitor.jpg` / `monitor.png` | 图标源图 |
 
+## 开发 / 运行
+
+```bash
+uv sync                              # 安装依赖
+uv run cell-monitor                  # 启动应用
+uv run cell-monitor --simulate       # 启动内置模拟相机离线体验完整流程
+uv run python build_exe.py           # PyInstaller 打包 dist/exe_{yyyyMMddHHmmss}.exe
+```
+
+源码结构：`src/cellmonitor/`（`cogsocket` 通信、`worker` 采集调度、`storage` 落库、`stats` 统计、`charts` 图表、`ui` tkinter 宫格界面、`simulator` 模拟相机）。
+
 ## License
 
 [LICENSE](LICENSE) © JustSmartAuto
