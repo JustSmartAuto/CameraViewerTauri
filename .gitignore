@@ -6,3 +6,5 @@ dist/
 *.spec
 uv.lock
 *.egg-info/
+
+kimi*.md

@@ -19,7 +19,16 @@ log = logging.getLogger(__name__)
 
 
 def judge(value, cell: CellConfig) -> bool | None:
-    """阈值判定：返回 True=OK False=NG None=无阈值或无法判定。"""
+    """阈值判定：返回 True=OK False=NG None=无阈值或无法判定。
+
+    simple 记录模式：仅记录数据，不做阈值判定，始终返回 None。
+    advanced 模式：上下限仅对数值类型（int/float/auto）生效；
+    string/bool/other 不做判定；auto 运行时尝试按数值解析。
+    """
+    if cell.is_simple_record:
+        return None
+    if not cell.is_numeric:
+        return None
     if cell.lower is None and cell.upper is None:
         return None
     try:

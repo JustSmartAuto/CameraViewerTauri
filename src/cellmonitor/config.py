@@ -33,17 +33,38 @@ def ensure_subdirs(root: Path) -> None:
         (root / sub).mkdir(parents=True, exist_ok=True)
 
 
+# 单元格数据类型：设置时通常未知，用 auto 让运行时按值推断
+CELL_DATA_TYPES = ("auto", "int", "float", "string", "bool", "other")
+# 仅数值类型应用上下限阈值；auto 在运行时尝试按数值解析
+NUMERIC_DATA_TYPES = {"auto", "int", "float"}
+
+# 记录模式：simple=仅记录数据不做阈值判定；advanced=记录并按上下限判定 OK/NG
+CELL_RECORD_MODES = ("simple", "advanced")
+
+
 @dataclass
 class CellConfig:
     """单个订阅单元格。"""
 
     name: str  # 单元格名或地址，如 "A2" / "Measure.Width"
+    data_type: str = "auto"  # auto/int/float/string/bool/other；auto=设置时未知，运行时推断
+    record_mode: str = "advanced"  # simple=仅记录；advanced=记录+阈值判定
     sample_mode: str = "event"  # event=按结果事件采样；poll=按固定周期轮询
     poll_interval: float = 1.0  # 轮询周期（秒），仅 poll 模式
-    lower: float | None = None  # 阈值下限（用于超差判定/统计），None 不判
-    upper: float | None = None  # 阈值上限
+    lower: float | None = None  # 阈值下限（仅 advanced 模式 + 数值类型有效），None 不判
+    upper: float | None = None  # 阈值上限（仅 advanced 模式 + 数值类型有效）
     unit: str = ""  # 单位标注
     note: str = ""  # 注解：说明该单元格数值的业务含义（如 "焊缝宽度/mm"）
+
+    @property
+    def is_numeric(self) -> bool:
+        """是否为数值类型（上下限阈值仅对此类生效）。"""
+        return self.data_type in NUMERIC_DATA_TYPES
+
+    @property
+    def is_simple_record(self) -> bool:
+        """是否为简单记录模式（不做阈值判定）。"""
+        return self.record_mode == "simple"
 
 
 @dataclass

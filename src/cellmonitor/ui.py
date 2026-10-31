@@ -13,9 +13,15 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 from . import charts, stats, theme
-from .config import CameraConfig, CellConfig, save_config
+from .config import (
+    CameraConfig, CellConfig,
+    CELL_DATA_TYPES, NUMERIC_DATA_TYPES, CELL_RECORD_MODES,
+    save_config,
+)
 from .storage import Storage, export_xlsx, timestamp_suffix
 from .worker import Monitor
+
+from cellmonitor import __version__
 
 log = logging.getLogger(__name__)
 
@@ -52,20 +58,32 @@ class CameraPanel(tk.Frame):
         for cell in cfg.cells:
             row = tk.Frame(content, bg=C["chrome_lighter"])
             row.pack(fill="x", padx=6, pady=1)
-            label_text = cell.name + (f"（{cell.note}）" if cell.note else "")
-            tk.Label(row, text=label_text, width=30, anchor="w",
+            type_tag = f"[{cell.data_type}]" if cell.data_type != "auto" else ""
+            mode_tag = "记录" if cell.is_simple_record else ""
+            prefix = " ".join(t for t in (type_tag, mode_tag) if t)
+            label_text = f"{cell.name} {prefix}".strip()
+            if cell.note:
+                label_text += f"（{cell.note}）"
+            tk.Label(row, text=label_text, width=34, anchor="w",
                      bg=C["chrome_lighter"], fg=C["ink"], font=theme.FONT).pack(side="left")
             value = tk.Label(row, text="—", bg=C["chrome_lighter"], fg=C["teal"],
                              font=("Arial", 11, "bold"))
             value.pack(side="left")
             self.value_labels[cell.name] = value
-            limits = ""
-            if cell.lower is not None:
-                limits += f"≥{cell.lower:g}"
-            if cell.upper is not None:
-                limits += (" " if limits else "") + f"≤{cell.upper:g}"
-            if limits:
-                tk.Label(row, text=limits, bg=C["chrome_lighter"],
+            if cell.is_simple_record:
+                tk.Label(row, text="（仅记录·不判定）", bg=C["chrome_lighter"],
+                         fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
+            elif cell.is_numeric:
+                limits = ""
+                if cell.lower is not None:
+                    limits += f"≥{cell.lower:g}"
+                if cell.upper is not None:
+                    limits += (" " if limits else "") + f"≤{cell.upper:g}"
+                if limits:
+                    tk.Label(row, text=limits, bg=C["chrome_lighter"],
+                             fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
+            elif cell.data_type in ("string", "bool", "other"):
+                tk.Label(row, text="（非数值·无阈值）", bg=C["chrome_lighter"],
                          fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
 
         btns = tk.Frame(self, bg=C["chrome"])
@@ -133,7 +151,48 @@ class MonitorApp:
         self.log_text.pack(fill="x", padx=2, pady=(0, 2))
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._build_menubar()
         self.root.after(100, self._poll_events)
+
+    def _build_menubar(self) -> None:
+        menubar = tk.Menu(self.root, bg=C["chrome"], fg=C["ink"], font=theme.FONT)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="使用说明", command=self.show_help)
+        help_menu.add_command(label="关于", command=self.show_about)
+        menubar.add_cascade(label="帮助", menu=help_menu)
+        self.root.config(menu=menubar)
+
+    def show_help(self) -> None:
+        text = (
+            "CameraCellMonitor 使用说明\n\n"
+            "1. 添加相机：点击「添加相机」，输入名称、IP、端口\n"
+            "   （固件 22.2+ 默认 80，6.x+ 默认 8087）。\n"
+            "2. 配置单元格：点击「配置单元格」打开交互式表格编辑器：\n"
+            "   - 添加/编辑/删除单元格，可上移下移调整顺序\n"
+            "   - 数据类型：auto（未知·运行时推断）/ int / float / string / bool / other\n"
+            "   - 记录模式：simple（仅记录·不判定）/ advanced（记录+阈值判定）\n"
+            "   - 上下限仅在 advanced + 数值类型 时生效；simple 模式恒为 NULL\n"
+            "   - 也可点「文本编辑」用 CSV 格式批量编辑（含回退兼容旧格式）\n"
+            "3. 连接：点击相机面板上的「连接」或工具栏「连接全部」。\n"
+            "4. 趋势图：点击「趋势图」选择单元格，查看历史数据折线图\n"
+            "   （红色段 = 超差，虚线 = 阈值基线）。\n"
+            "5. 导出：点击「导出xlsx」按相机生成报表。\n\n"
+            "数据目录：" + str(self.data_dir) + "\n"
+            "  ├─ db/    SQLite 数据库（所有采样点）\n"
+            "  ├─ xlsx/  导出的报表\n"
+            "  └─ charts/ 生成的趋势图 PNG"
+        )
+        messagebox.showinfo("使用说明", text)
+
+    def show_about(self) -> None:
+        text = (
+            "CameraCellMonitor\n"
+            f"版本 {__version__}\n\n"
+            "Cognex In-Sight 单元格数据监控器\n"
+            "（CogSocket 订阅 + SQLite/xlsx 落库 + 趋势图表）\n\n"
+            "隶属于 CameraViewerTauri 仓库的 cell-monitor 分支。"
+        )
+        messagebox.showinfo("关于", text)
 
     def _rebuild_grid(self) -> None:
         for child in self.grid_frame.winfo_children():
@@ -243,38 +302,10 @@ class MonitorApp:
         self._rebuild_grid()
 
     def _ask_cells(self, current: list[CellConfig] | None = None) -> list[CellConfig]:
-        """简易单元格编辑：每行 `名称[,event|poll,间隔,下限,上限,注解]`。"""
-        hint = ("每行一个单元格：名称[,event|poll,轮询间隔秒,下限,上限,注解]\n"
-                "示例：C36,event,0,175,182,焊缝宽度mm")
-        initial = "\n".join(
-            f"{c.name},{c.sample_mode},{c.poll_interval},"
-            f"{'' if c.lower is None else c.lower},{'' if c.upper is None else c.upper},{c.note}"
-            for c in (current or [])
-        )
-        text = CellDialog(self.root, "订阅单元格", hint, initial).result
-        cells = []
-        for line in (text or "").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = [p.strip() for p in line.split(",")]
-            name = parts[0]
-            mode = parts[1] if len(parts) > 1 and parts[1] else "event"
-
-            def num(i):
-                if len(parts) > i and parts[i] not in ("", None):
-                    try:
-                        return float(parts[i])
-                    except ValueError:
-                        return None
-                return None
-
-            interval = num(2) or 1.0
-            cells.append(CellConfig(name=name, sample_mode=mode,
-                                    poll_interval=interval,
-                                    lower=num(3), upper=num(4),
-                                    note=",".join(parts[5:]) if len(parts) > 5 else ""))
-        return cells
+        """打开交互式单元格编辑器（表格 + 表单），可回退到文本编辑。"""
+        cells = [CellConfig(**c.__dict__) for c in (current or [])]
+        dlg = CellEditorDialog(self.root, cells)
+        return dlg.result or []
 
     # ---------- 图表 / 导出 ----------
 
@@ -287,6 +318,11 @@ class MonitorApp:
         if not cell_name:
             return
         cell_cfg = next((c for c in cfg.cells if c.name == cell_name), None)
+        if cell_cfg and cell_cfg.data_type in ("string", "bool", "other"):
+            messagebox.showinfo("提示",
+                                f"单元格「{cell_name}」为 {cell_cfg.data_type} 类型，"
+                                "无数值趋势可绘制。")
+            return
         points = self.storage.query(cfg.name, cell_name)
         if not points:
             messagebox.showinfo("提示", "该单元格暂无数据。")
@@ -338,6 +374,351 @@ class MonitorApp:
 
     def run(self) -> None:
         self.root.mainloop()
+
+
+# ---------- 单元格文本格式 ----------
+# 名称,数据类型,记录模式,event|poll,轮询间隔秒,下限,上限,单位,注解
+_CELL_TEXT_HINT = (
+    "每行一个单元格：名称,数据类型,记录模式,event|poll,轮询间隔秒,下限,上限,单位,注解\n"
+    "数据类型：auto（未知·运行时推断）/ int / float / string / bool / other\n"
+    "记录模式：simple（仅记录·不判定）/ advanced（记录+阈值判定）\n"
+    "上下限仅对 advanced + int/float/auto 有效；simple 模式忽略阈值\n"
+    "示例：C36,float,advanced,event,0,175,182,mm,焊缝宽度\n"
+    "      Status,string,simple,event,0,,,,,判定结果"
+)
+
+
+def _cells_to_text(cells: list[CellConfig]) -> str:
+    lines = []
+    for c in cells:
+        lines.append(",".join([
+            c.name, c.data_type, c.record_mode, c.sample_mode,
+            f"{c.poll_interval:g}",
+            "" if c.lower is None else f"{c.lower:g}",
+            "" if c.upper is None else f"{c.upper:g}",
+            c.unit, c.note,
+        ]))
+    return "\n".join(lines)
+
+
+def _text_to_cells(text: str) -> list[CellConfig]:
+    cells = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        name = parts[0]
+        if not name:
+            continue
+
+        def num(i):
+            if len(parts) > i and parts[i] not in ("", None):
+                try:
+                    return float(parts[i])
+                except ValueError:
+                    return None
+            return None
+
+        # v1 旧格式（无 data_type/record_mode/unit）：第 2 段为 event/poll
+        if len(parts) > 1 and parts[1] in ("event", "poll"):
+            data_type = "auto"
+            record_mode = "advanced"
+            mode = parts[1]
+            interval = num(2) or 1.0
+            lower, upper = num(3), num(4)
+            unit = ""
+            note = ",".join(parts[5:]) if len(parts) > 5 else ""
+        # v2 中间格式（有 data_type，无 record_mode）：第 2 段为数据类型且第 3 段为 event/poll
+        elif (len(parts) > 2 and parts[1] in CELL_DATA_TYPES
+              and parts[2] in ("event", "poll")):
+            data_type = parts[1]
+            record_mode = "advanced"
+            mode = parts[2]
+            interval = num(3) or 1.0
+            lower, upper = num(4), num(5)
+            unit = parts[6] if len(parts) > 6 else ""
+            note = ",".join(parts[7:]) if len(parts) > 7 else ""
+        # v3 新格式：名称,数据类型,记录模式,采样模式,...
+        else:
+            data_type = parts[1] if len(parts) > 1 and parts[1] else "auto"
+            if data_type not in CELL_DATA_TYPES:
+                data_type = "auto"
+            record_mode = parts[2] if len(parts) > 2 and parts[2] else "advanced"
+            if record_mode not in CELL_RECORD_MODES:
+                record_mode = "advanced"
+            mode = parts[3] if len(parts) > 3 and parts[3] else "event"
+            if mode not in ("event", "poll"):
+                mode = "event"
+            interval = num(4) or 1.0
+            lower, upper = num(5), num(6)
+            unit = parts[7] if len(parts) > 7 else ""
+            note = ",".join(parts[8:]) if len(parts) > 8 else ""
+
+        cells.append(CellConfig(name=name, data_type=data_type, record_mode=record_mode,
+                                sample_mode=mode, poll_interval=interval,
+                                lower=lower, upper=upper, unit=unit, note=note))
+    return cells
+
+
+class CellFormDialog(tk.Toplevel):
+    """单单元格编辑表单：上下限仅对数值类型可用。"""
+
+    def __init__(self, parent, cell: CellConfig | None = None):
+        super().__init__(parent)
+        self.title("单元格设置")
+        self.result: CellConfig | None = None
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        theme.title_tab(self, "单元格设置")
+
+        cell = cell or CellConfig(name="")
+        self._cell = CellConfig(**cell.__dict__)
+
+        body = tk.Frame(self, bg=C["chrome"])
+        body.pack(fill="both", expand=True, padx=8, pady=6)
+
+        self._name_var = tk.StringVar(value=cell.name)
+        self._type_var = tk.StringVar(value=cell.data_type)
+        self._record_var = tk.StringVar(value=cell.record_mode)
+        self._mode_var = tk.StringVar(value=cell.sample_mode)
+        self._interval_var = tk.StringVar(value=f"{cell.poll_interval:g}")
+        self._lower_var = tk.StringVar(value="" if cell.lower is None else f"{cell.lower:g}")
+        self._upper_var = tk.StringVar(value="" if cell.upper is None else f"{cell.upper:g}")
+        self._unit_var = tk.StringVar(value=cell.unit)
+        self._note_var = tk.StringVar(value=cell.note)
+
+        def row(r, label, widget):
+            tk.Label(body, text=label, bg=C["chrome"], fg=C["ink"],
+                     font=theme.FONT).grid(row=r, column=0, sticky="e", padx=4, pady=3)
+            widget.grid(row=r, column=1, sticky="we", padx=4, pady=3)
+
+        self._name_entry = tk.Entry(body, textvariable=self._name_var, width=30)
+        row(0, "单元格名称", self._name_entry)
+
+        self._type_combo = ttk.Combobox(body, textvariable=self._type_var, width=28,
+                                        values=CELL_DATA_TYPES, state="readonly")
+        self._type_combo.bind("<<ComboboxSelected>>", lambda e: self._update_limit_state())
+        row(1, "数据类型", self._type_combo)
+
+        self._record_combo = ttk.Combobox(body, textvariable=self._record_var, width=28,
+                                          values=CELL_RECORD_MODES, state="readonly")
+        self._record_combo.bind("<<ComboboxSelected>>", lambda e: self._update_limit_state())
+        row(2, "记录模式", self._record_combo)
+
+        self._mode_combo = ttk.Combobox(body, textvariable=self._mode_var, width=28,
+                                        values=("event", "poll"), state="readonly")
+        self._mode_combo.bind("<<ComboboxSelected>>", lambda e: self._on_mode_change())
+        row(3, "采样模式", self._mode_combo)
+
+        self._interval_entry = tk.Entry(body, textvariable=self._interval_var, width=30)
+        row(4, "轮询间隔(秒)", self._interval_entry)
+
+        self._lower_entry = tk.Entry(body, textvariable=self._lower_var, width=30)
+        row(5, "下限", self._lower_entry)
+
+        self._upper_entry = tk.Entry(body, textvariable=self._upper_var, width=30)
+        row(6, "上限", self._upper_entry)
+
+        self._unit_entry = tk.Entry(body, textvariable=self._unit_var, width=30)
+        row(7, "单位", self._unit_entry)
+
+        self._note_entry = tk.Entry(body, textvariable=self._note_var, width=30)
+        row(8, "注解", self._note_entry)
+
+        self._hint_label = tk.Label(body, text="", bg=C["chrome"], fg=C["teal"],
+                                    font=theme.FONT, justify="left", wraplength=320)
+        self._hint_label.grid(row=9, column=0, columnspan=2, sticky="w", padx=4, pady=(6, 0))
+
+        body.columnconfigure(1, weight=1)
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=6)
+        theme.beos_button(btns, "确定", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self._update_limit_state()
+        self._on_mode_change()
+
+        self.grab_set()
+        parent.wait_window(self)
+
+    def _update_limit_state(self) -> None:
+        """根据数据类型与记录模式决定上下限是否可用，并更新提示。"""
+        simple = self._record_var.get() == "simple"
+        numeric = self._type_var.get() in NUMERIC_DATA_TYPES
+        limits_enabled = (not simple) and numeric
+        for ent in (self._lower_entry, self._upper_entry):
+            ent.config(state="normal" if limits_enabled else "disabled")
+
+        if simple:
+            self._hint_label.config(
+                text="简单记录模式：仅记录单元格数值，不做上下限阈值判定，判定结果恒为 NULL。",
+                fg=C["teal"])
+        elif numeric:
+            self._hint_label.config(
+                text="高级模式·数值类型：上下限阈值生效。auto 类型在运行时按实际值推断。",
+                fg=C["teal"])
+        else:
+            self._hint_label.config(
+                text=f"高级模式·非数值类型（{self._type_var.get()}）：上下限不生效，判定结果为 NULL。",
+                fg=C["red_dot"])
+
+    def _on_mode_change(self) -> None:
+        poll = self._mode_var.get() == "poll"
+        self._interval_entry.config(state="normal" if poll else "disabled")
+
+    def _ok(self) -> None:
+        name = self._name_var.get().strip()
+        if not name:
+            messagebox.showerror("错误", "请填写单元格名称。", parent=self)
+            return
+        try:
+            interval = float(self._interval_var.get()) if self._interval_var.get() else 1.0
+        except ValueError:
+            messagebox.showerror("错误", "轮询间隔必须是数字。", parent=self)
+            return
+
+        def parse_num(var):
+            s = var.get().strip()
+            if not s:
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+
+        simple = self._record_var.get() == "simple"
+        lower = None if simple else parse_num(self._lower_var)
+        upper = None if simple else parse_num(self._upper_var)
+        self.result = CellConfig(
+            name=name,
+            data_type=self._type_var.get(),
+            record_mode=self._record_var.get(),
+            sample_mode=self._mode_var.get(),
+            poll_interval=interval,
+            lower=lower, upper=upper,
+            unit=self._unit_var.get().strip(),
+            note=self._note_var.get().strip(),
+        )
+        self.destroy()
+
+
+class CellEditorDialog(tk.Toplevel):
+    """交互式单元格编辑器：表格 + 增删改 + 文本编辑回退。"""
+
+    COLUMNS = ("name", "type", "record", "mode", "interval", "lower", "upper", "unit", "note")
+    HEADINGS = ("名称", "类型", "记录", "模式", "间隔", "下限", "上限", "单位", "注解")
+    WIDTHS = (100, 60, 60, 55, 55, 65, 65, 45, 130)
+
+    def __init__(self, parent, cells: list[CellConfig]):
+        super().__init__(parent)
+        self.title("订阅单元格")
+        self.result: list[CellConfig] | None = None
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        theme.title_tab(self, "订阅单元格", f"{len(cells)} 个")
+
+        self._cells: list[CellConfig] = [CellConfig(**c.__dict__) for c in cells]
+
+        top = tk.Frame(self, bg=C["chrome"])
+        top.pack(fill="both", expand=True, padx=8, pady=6)
+
+        self._tree = ttk.Treeview(top, columns=self.COLUMNS, show="headings", height=8)
+        for col, head, w in zip(self.COLUMNS, self.HEADINGS, self.WIDTHS):
+            self._tree.heading(col, text=head)
+            self._tree.column(col, width=w, anchor="w")
+        self._tree.pack(side="left", fill="both", expand=True)
+        self._tree.bind("<Double-1>", lambda e: self._edit())
+
+        sb = ttk.Scrollbar(top, orient="vertical", command=self._tree.yview)
+        sb.pack(side="right", fill="y")
+        self._tree.configure(yscrollcommand=sb.set)
+
+        side = tk.Frame(self, bg=C["chrome"])
+        side.pack(fill="x", padx=8, pady=(0, 4))
+        theme.beos_button(side, "添加", self._add).pack(side="left", padx=3)
+        theme.beos_button(side, "编辑", self._edit).pack(side="left", padx=3)
+        theme.beos_button(side, "删除", self._delete).pack(side="left", padx=3)
+        theme.beos_button(side, "上移", self._move_up).pack(side="left", padx=3)
+        theme.beos_button(side, "下移", self._move_down).pack(side="left", padx=3)
+        theme.beos_button(side, "文本编辑", self._text_edit).pack(side="left", padx=3)
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=6)
+        theme.beos_button(btns, "确定", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self._refresh()
+        self.grab_set()
+        parent.wait_window(self)
+
+    def _refresh(self) -> None:
+        for item in self._tree.get_children():
+            self._tree.delete(item)
+        for c in self._cells:
+            self._tree.insert("", "end", values=(
+                c.name, c.data_type, c.record_mode, c.sample_mode, f"{c.poll_interval:g}",
+                "" if c.lower is None else f"{c.lower:g}",
+                "" if c.upper is None else f"{c.upper:g}",
+                c.unit, c.note,
+            ))
+        theme.title_tab(self, "订阅单元格", f"{len(self._cells)} 个")
+
+    def _selected_index(self) -> int | None:
+        sel = self._tree.selection()
+        if not sel:
+            return None
+        return self._tree.index(sel[0])
+
+    def _add(self) -> None:
+        dlg = CellFormDialog(self)
+        if dlg.result:
+            self._cells.append(dlg.result)
+            self._refresh()
+
+    def _edit(self) -> None:
+        idx = self._selected_index()
+        if idx is None:
+            messagebox.showinfo("提示", "请先选择一个单元格。", parent=self)
+            return
+        dlg = CellFormDialog(self, self._cells[idx])
+        if dlg.result:
+            self._cells[idx] = dlg.result
+            self._refresh()
+
+    def _delete(self) -> None:
+        idx = self._selected_index()
+        if idx is None:
+            return
+        if messagebox.askyesno("确认", f"删除单元格「{self._cells[idx].name}」？", parent=self):
+            del self._cells[idx]
+            self._refresh()
+
+    def _move_up(self) -> None:
+        idx = self._selected_index()
+        if idx and idx > 0:
+            self._cells[idx], self._cells[idx - 1] = self._cells[idx - 1], self._cells[idx]
+            self._refresh()
+            self._tree.selection_set(self._tree.get_children()[idx - 1])
+
+    def _move_down(self) -> None:
+        idx = self._selected_index()
+        if idx is not None and idx < len(self._cells) - 1:
+            self._cells[idx], self._cells[idx + 1] = self._cells[idx + 1], self._cells[idx]
+            self._refresh()
+            self._tree.selection_set(self._tree.get_children()[idx + 1])
+
+    def _text_edit(self) -> None:
+        text = CellDialog(self, "文本编辑单元格", _CELL_TEXT_HINT,
+                          _cells_to_text(self._cells)).result
+        if text is not None:
+            self._cells = _text_to_cells(text)
+            self._refresh()
+
+    def _ok(self) -> None:
+        self.result = self._cells
+        self.destroy()
 
 
 class CellDialog(tk.Toplevel):
