@@ -1,4 +1,4 @@
-"""tkinter 多相机宫格界面。
+"""tkinter 多相机宫格界面（BeOS 主题，见 theme.py）。
 
 布局：顶部工具栏（连接/断开、添加相机、导出），中部相机宫格面板，
 底部日志。asyncio 事件循环运行于独立线程，通过队列与 UI 线程通信。
@@ -10,14 +10,16 @@ import asyncio
 import logging
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import messagebox, simpledialog, ttk
 
-from . import charts, stats
-from .config import CameraConfig, CellConfig, load_config, save_config
+from . import charts, stats, theme
+from .config import CameraConfig, CellConfig, save_config
 from .storage import Storage, export_xlsx, timestamp_suffix
 from .worker import Monitor
 
 log = logging.getLogger(__name__)
+
+C = theme.COLORS
 
 STATUS_TEXT = {
     "offline": "离线",
@@ -27,57 +29,58 @@ STATUS_TEXT = {
 }
 
 
-class CameraPanel(ttk.Frame):
-    """单相机面板：名称、状态、单元格实时值、操作按钮。"""
+class CameraPanel(tk.Frame):
+    """单相机面板（BeOS 窗口）：黄色标题页签、白色内容区、药丸按钮。"""
 
     def __init__(self, master, app: "MonitorApp", cfg: CameraConfig):
-        super().__init__(master, padding=6, relief="ridge")
+        super().__init__(master, bg=C["chrome"], highlightthickness=1,
+                         highlightbackground=C["chrome_darker"], bd=0)
         self.app = app
         self.cfg = cfg
         self.status = "offline"
-        self.value_labels: dict[str, ttk.Label] = {}
+        self.value_labels: dict[str, tk.Label] = {}
 
-        head = ttk.Frame(self)
-        head.pack(fill="x")
-        ttk.Label(head, text=cfg.name, font=("", 12, "bold")).pack(side="left")
-        self.status_label = ttk.Label(head, text=STATUS_TEXT["offline"], foreground="gray")
-        self.status_label.pack(side="right")
-        ttk.Label(head, text=f"{cfg.host}:{cfg.port}").pack(side="right", padx=8)
+        tab_text = f"{cfg.name}  ({cfg.host}:{cfg.port})"
+        bar, self.status_label = theme.title_tab(self, tab_text, STATUS_TEXT["offline"])
 
-        body = ttk.Frame(self)
-        body.pack(fill="both", expand=True, pady=4)
+        content = theme.content_frame(self)
+        content.pack(fill="both", expand=True, padx=2, pady=2)
+
         if not cfg.cells:
-            ttk.Label(body, text="（未配置单元格）", foreground="gray").pack(anchor="w")
+            tk.Label(content, text="（未配置单元格）", bg=C["chrome_lighter"],
+                     fg=C["chrome_dark"], font=theme.FONT).pack(anchor="w", padx=6, pady=4)
         for cell in cfg.cells:
-            row = ttk.Frame(body)
-            row.pack(fill="x")
-            label_text = cell.name
-            if cell.note:
-                label_text = f"{cell.name}（{cell.note}）"
-            ttk.Label(row, text=label_text, width=28).pack(side="left")
-            value = ttk.Label(row, text="—", font=("", 11))
+            row = tk.Frame(content, bg=C["chrome_lighter"])
+            row.pack(fill="x", padx=6, pady=1)
+            label_text = cell.name + (f"（{cell.note}）" if cell.note else "")
+            tk.Label(row, text=label_text, width=30, anchor="w",
+                     bg=C["chrome_lighter"], fg=C["ink"], font=theme.FONT).pack(side="left")
+            value = tk.Label(row, text="—", bg=C["chrome_lighter"], fg=C["teal"],
+                             font=("Arial", 11, "bold"))
             value.pack(side="left")
             self.value_labels[cell.name] = value
             limits = ""
             if cell.lower is not None:
                 limits += f"≥{cell.lower:g}"
             if cell.upper is not None:
-                limits += f" ≤{cell.upper:g}"
+                limits += (" " if limits else "") + f"≤{cell.upper:g}"
             if limits:
-                ttk.Label(row, text=limits, foreground="gray").pack(side="right")
+                tk.Label(row, text=limits, bg=C["chrome_lighter"],
+                         fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
 
-        btns = ttk.Frame(self)
-        btns.pack(fill="x")
-        ttk.Button(btns, text="连接", command=lambda: self.app.connect_camera(cfg)).pack(side="left")
-        ttk.Button(btns, text="断开", command=lambda: self.app.disconnect_camera(cfg.name)).pack(side="left", padx=4)
-        ttk.Button(btns, text="趋势图", command=lambda: self.app.show_chart(cfg)).pack(side="left", padx=4)
-        ttk.Button(btns, text="导出xlsx", command=lambda: self.app.export_camera(cfg)).pack(side="left", padx=4)
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(fill="x", padx=2, pady=(0, 2))
+        theme.beos_button(btns, "连接", lambda: self.app.connect_camera(cfg)).pack(side="left", padx=3)
+        theme.beos_button(btns, "断开", lambda: self.app.disconnect_camera(cfg.name)).pack(side="left", padx=3)
+        theme.beos_button(btns, "趋势图", lambda: self.app.show_chart(cfg)).pack(side="left", padx=3)
+        theme.beos_button(btns, "导出xlsx", lambda: self.app.export_camera(cfg)).pack(side="left", padx=3)
 
     def set_status(self, status: str, detail: str = "") -> None:
         self.status = status
-        colors = {"offline": "gray", "connecting": "orange",
-                  "connected": "green", "error": "red"}
-        self.status_label.config(text=STATUS_TEXT.get(status, status), foreground=colors.get(status, "black"))
+        colors = {"offline": C["chrome_darker"], "connecting": C["yellow_dark"],
+                  "connected": C["teal"], "error": C["red_dot"]}
+        self.status_label.config(text=STATUS_TEXT.get(status, status),
+                                 fg=colors.get(status, C["ink"]))
 
     def set_value(self, cell: str, value) -> None:
         label = self.value_labels.get(cell)
@@ -96,27 +99,37 @@ class MonitorApp:
 
         self.root = tk.Tk()
         self.root.title("CameraCellMonitor — Cognex In-Sight 单元格数据监控器")
+        theme.apply(self.root)
         self._build_ui()
         self._start_asyncio_thread()
 
     # ---------- UI 构建 ----------
 
     def _build_ui(self) -> None:
-        toolbar = ttk.Frame(self.root, padding=6)
-        toolbar.pack(fill="x")
-        ttk.Button(toolbar, text="连接全部", command=self.connect_all).pack(side="left")
-        ttk.Button(toolbar, text="断开全部", command=self.disconnect_all).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="添加相机", command=self.add_camera).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="配置单元格", command=self.edit_camera).pack(side="left", padx=4)
-        ttk.Button(toolbar, text="打开数据目录", command=self.open_data_dir).pack(side="left", padx=4)
-        ttk.Label(toolbar, text=f"数据目录: {self.data_dir}", foreground="gray").pack(side="right")
+        toolbar = theme.window_frame(self.root)
+        toolbar.pack(fill="x", padx=8, pady=(8, 4))
+        theme.title_tab(toolbar, "CameraCellMonitor", "控制面板")
+        bar = tk.Frame(toolbar, bg=C["chrome"])
+        bar.pack(fill="x", padx=2, pady=2)
+        theme.beos_button(bar, "连接全部", self.connect_all, default=True).pack(side="left", padx=3, pady=3)
+        theme.beos_button(bar, "断开全部", self.disconnect_all).pack(side="left", padx=3)
+        theme.beos_button(bar, "添加相机", self.add_camera).pack(side="left", padx=3)
+        theme.beos_button(bar, "配置单元格", self.edit_camera).pack(side="left", padx=3)
+        theme.beos_button(bar, "打开数据目录", self.open_data_dir).pack(side="left", padx=3)
+        tk.Label(bar, text=f"数据目录: {self.data_dir}", bg=C["chrome"],
+                 fg=C["chrome_darker"], font=theme.FONT).pack(side="right", padx=6)
 
-        self.grid_frame = ttk.Frame(self.root, padding=6)
-        self.grid_frame.pack(fill="both", expand=True)
+        self.grid_frame = tk.Frame(self.root, bg=C["bg"])
+        self.grid_frame.pack(fill="both", expand=True, padx=6, pady=4)
         self._rebuild_grid()
 
-        self.log_text = tk.Text(self.root, height=6, state="disabled")
-        self.log_text.pack(fill="x", padx=6, pady=(0, 6))
+        logbox = theme.window_frame(self.root)
+        logbox.pack(fill="x", padx=8, pady=(4, 8))
+        theme.title_tab(logbox, "日志")
+        self.log_text = tk.Text(logbox, height=6, state="disabled", bg=C["chrome_lighter"],
+                                fg=C["ink"], font=("Consolas", 9), relief="flat",
+                                highlightthickness=1, highlightbackground=C["chrome_darker"])
+        self.log_text.pack(fill="x", padx=2, pady=(0, 2))
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self._poll_events)
@@ -126,10 +139,10 @@ class MonitorApp:
             child.destroy()
         self.panels.clear()
         n = max(len(self.cameras), 1)
-        cols = min(3, n) if n else 1
+        cols = min(3, n)
         for i, cfg in enumerate(self.cameras):
             panel = CameraPanel(self.grid_frame, self, cfg)
-            panel.grid(row=i // cols, column=i % cols, sticky="nsew", padx=4, pady=4)
+            panel.grid(row=i // cols, column=i % cols, sticky="nsew", padx=5, pady=5)
             self.panels[cfg.name] = panel
         for c in range(cols):
             self.grid_frame.columnconfigure(c, weight=1)
@@ -229,7 +242,7 @@ class MonitorApp:
         self._rebuild_grid()
 
     def _ask_cells(self, current: list[CellConfig] | None = None) -> list[CellConfig]:
-        """简易单元格编辑：每行 `名称[,event|poll,间隔,下限,上限]`。"""
+        """简易单元格编辑：每行 `名称[,event|poll,间隔,下限,上限,注解]`。"""
         hint = ("每行一个单元格：名称[,event|poll,轮询间隔秒,下限,上限,注解]\n"
                 "示例：C36,event,0,175,182,焊缝宽度mm")
         initial = "\n".join(
@@ -297,7 +310,7 @@ class MonitorApp:
                 + (f" CPK={s['cpk']:.3f}" if "cpk" in s else "")
             )
 
-    def export_camera(self, cfg: CameraConfig) -> None:
+    def export_camera(self, cfg: CameraConfig):
         try:
             path = export_xlsx(self.storage, cfg.name, self.data_dir / "xlsx",
                                notes={c.name: c.note for c in cfg.cells})
@@ -334,14 +347,19 @@ class CellDialog(tk.Toplevel):
         self.title(title)
         self.result = None
         self.transient(parent)
-        ttk.Label(self, text=hint, justify="left").pack(anchor="w", padx=8, pady=4)
-        self.text = tk.Text(self, width=60, height=10)
+        self.configure(bg=C["chrome"])
+        theme.title_tab(self, title)
+        tk.Label(self, text=hint, justify="left", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).pack(anchor="w", padx=8, pady=4)
+        self.text = tk.Text(self, width=60, height=10, bg=C["chrome_lighter"], fg=C["ink"],
+                            font=("Consolas", 9), relief="flat", highlightthickness=1,
+                            highlightbackground=C["chrome_darker"])
         self.text.pack(padx=8, pady=4)
         self.text.insert("1.0", initial)
-        btns = ttk.Frame(self)
+        btns = tk.Frame(self, bg=C["chrome"])
         btns.pack(pady=6)
-        ttk.Button(btns, text="确定", command=self._ok).pack(side="left", padx=4)
-        ttk.Button(btns, text="取消", command=self.destroy).pack(side="left", padx=4)
+        theme.beos_button(btns, "确定", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
         self.grab_set()
         parent.wait_window(self)
 
@@ -356,8 +374,10 @@ class ChartWindow(tk.Toplevel):
     def __init__(self, parent, fig, title: str):
         super().__init__(parent)
         self.title(title)
+        self.configure(bg=C["chrome"])
+        theme.title_tab(self, title)
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
         canvas = FigureCanvasTkAgg(fig, master=self)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=2, pady=2)
