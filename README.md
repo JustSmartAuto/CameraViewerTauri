@@ -39,8 +39,8 @@ pyinstaller -F -w --name 相机数据监控器 相机数据监控器.py
 |---|---|
 | `reference/相机数据监控器_web_2610171547.py` | 主程序源码（tkinter + Web） |
 | `reference/Cognex In-Sight 3D 相机电子表格函数参考（整理版）.md` | Cognex In-Sight 3D 函数参考文档 |
-| `reference/monitor.jpg` / `monitor.png` | 程序图标源图（retro 显示器） |
-| `reference/app_icon.ico` | 应用图标（由 monitor.jpg 拉伸方形 + 16% 圆角生成，多尺寸 ICO） |
+| `assets/monitor.jpg` / `monitor.png` | 程序图标源图（retro 显示器） |
+| `assets/app_icon.ico` | 应用图标（由 monitor.jpg 拉伸方形 + 16% 圆角生成，多尺寸 ICO） |
 
 ## License
 
