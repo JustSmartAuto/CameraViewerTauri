@@ -112,7 +112,10 @@ class CameraWorker:
                     ts = datetime.now()
                     for cell in event_cells:
                         if cell.name in values:
-                            self._store(ts, cell, values[cell.name])
+                            try:
+                                self._store(ts, cell, values[cell.name])
+                            except Exception as exc:
+                                log.warning("store event cell %s failed: %s", cell.name, exc)
                     self._push("result", values)
                 finally:
                     # 必须 ready，相机才会推送下一帧
@@ -137,27 +140,31 @@ class CameraWorker:
     async def _poll_loop(self, sid: str, cell: CellConfig) -> None:
         try:
             while self._running:
-                results = await self.client.post(f"{sid}/queryCellResults", [[cell.name]])
-                values = {}
-                for item in results or []:
-                    loc = item.get("location") or item.get("name")
-                    if loc:
-                        values[loc] = item.get("data")
-                    name = item.get("name")
-                    if name:
-                        values[name] = item.get("data")
-                if cell.name in values:
-                    self._store(datetime.now(), cell, values[cell.name])
-                    self._push("result", {cell.name: values[cell.name]})
+                try:
+                    results = await self.client.post(f"{sid}/queryCellResults", [[cell.name]])
+                    values = {}
+                    for item in results or []:
+                        loc = item.get("location") or item.get("name")
+                        if loc:
+                            values[loc] = item.get("data")
+                        name = item.get("name")
+                        if name:
+                            values[name] = item.get("data")
+                    if cell.name in values:
+                        self._store(datetime.now(), cell, values[cell.name])
+                        self._push("result", {cell.name: values[cell.name]})
+                except Exception as exc:
+                    log.warning("poll %s iteration failed: %s", cell.name, exc)
                 await asyncio.sleep(cell.poll_interval)
         except asyncio.CancelledError:
             pass
-        except Exception as exc:
-            log.warning("poll %s failed: %s", cell.name, exc)
 
     def _store(self, ts: datetime, cell: CellConfig, value) -> None:
-        ok = judge(value, cell)
-        self.storage.insert_sample(ts, self.cfg.name, cell.name, value, ok)
+        try:
+            ok = judge(value, cell)
+            self.storage.insert_sample(ts, self.cfg.name, cell.name, value, ok)
+        except Exception as exc:
+            log.warning("store cell %s failed: %s", cell.name, exc)
 
 
 class Monitor:
