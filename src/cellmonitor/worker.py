@@ -13,6 +13,8 @@ from datetime import datetime
 
 from .cogsocket import CogSocketClient, CogSocketError, parse_cells
 from .config import CameraConfig, CellConfig
+from .images import (compose_render, fetch_image, fetch_json, image_source_size,
+                     resolve_sources, scaled_url, to_jpeg)
 from .storage import Storage
 
 log = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ class CameraWorker:
         self.client = CogSocketClient(cfg.host, cfg.port, cfg.username, cfg.password)
         self._task: asyncio.Task | None = None
         self._poll_tasks: list[asyncio.Task] = []
+        self._image_tasks: list[asyncio.Task] = []
         self._running = False
 
     @property
@@ -67,6 +70,9 @@ class CameraWorker:
         for task in self._poll_tasks:
             task.cancel()
         self._poll_tasks.clear()
+        for task in self._image_tasks:
+            task.cancel()
+        self._image_tasks.clear()
         if self._task:
             self._task.cancel()
             try:
@@ -104,23 +110,30 @@ class CameraWorker:
         sid = await self.client.open_session(cell_names)
         self._push("session", sid)
 
-        event_cells = [c for c in self.cfg.cells if c.sample_mode == "event"]
-        poll_cells = [c for c in self.cfg.cells if c.sample_mode == "poll"]
+        # 图像随结果事件一起到达：图像单元格一律按事件采样（poll 会重复下载同一张图）
+        event_cells = [c for c in self.cfg.cells if c.sample_mode == "event" or c.is_image]
+        poll_cells = [c for c in self.cfg.cells
+                      if c.sample_mode == "poll" and not c.is_image]
 
         if event_cells:
             done = asyncio.Event()
+            image_names = {c.name for c in event_cells if c.is_image}
 
             def on_result(hmi_result):
                 try:
                     values = parse_cells(hmi_result or {})
                     ts = datetime.now()
                     for cell in event_cells:
+                        if cell.is_image:
+                            self._store_image(ts, cell, hmi_result)
+                            continue
                         if cell.name in values:
                             try:
                                 self._store(ts, cell, values[cell.name])
                             except Exception as exc:
                                 log.warning("store event cell %s failed: %s", cell.name, exc)
-                    self._push("result", values)
+                    self._push("result", {k: v for k, v in values.items()
+                                          if k not in image_names})
                 finally:
                     # 必须 ready，相机才会推送下一帧
                     asyncio.ensure_future(self._safe_ready())
@@ -169,6 +182,82 @@ class CameraWorker:
             self.storage.insert_sample(ts, self.cfg.name, cell.name, value, ok)
         except Exception as exc:
             log.warning("store cell %s failed: %s", cell.name, exc)
+
+    def _store_image(self, ts: datetime, cell: CellConfig, hmi_result: dict) -> None:
+        """解析图像地址并异步下载落库（下载不阻塞事件循环与其他相机）。"""
+        try:
+            sources = resolve_sources(hmi_result, cell.name)
+            size = image_source_size(hmi_result)
+        except Exception as exc:
+            log.warning("resolve image for %s failed: %s", cell.name, exc)
+            return
+        if not sources:
+            log.debug("no image source for %s", cell.name)
+            return
+        task = asyncio.ensure_future(self._download_images(ts, cell, sources, size))
+        self._image_tasks.append(task)
+        task.add_done_callback(lambda t: self._image_tasks.remove(t)
+                               if t in self._image_tasks else None)
+
+    async def _download_images(self, ts: datetime, cell: CellConfig,
+                               sources: dict[str, str], src_size) -> None:
+        host, port = self.client.host, self.client.port
+        raw_url = sources.get("image")
+        if not raw_url:
+            return
+        src_w, src_h = src_size if src_size else (None, None)
+        gfx_url = sources.get("graphics")
+        # 图像与图形并行下载：视图记录（view id）会被相机快速轮换，串行下载时图形常已过期
+        fetches = [asyncio.to_thread(fetch_image, host, port,
+                                     scaled_url(raw_url, src_w, src_h))]
+        if gfx_url:
+            fetches.append(asyncio.to_thread(fetch_json, host, port, gfx_url))
+        results = await asyncio.gather(*fetches, return_exceptions=True)
+
+        data = results[0]
+        if isinstance(data, Exception):
+            log.warning("download image for %s failed: %s", cell.name, data)
+            return
+        graphics = None
+        if gfx_url:
+            graphics = results[1]
+            if isinstance(graphics, Exception):
+                log.warning("download graphics for %s failed: %s", cell.name, graphics)
+                graphics = None
+        data = data[0]  # fetch_image 返回 (bytes, mime)
+
+        try:
+            raw_jpeg, width, height = await asyncio.to_thread(to_jpeg, data)
+            self.storage.insert_image(ts, self.cfg.name, cell.name, "image",
+                                      raw_jpeg, "image/jpeg")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("store image for %s failed: %s", cell.name, exc)
+            return
+
+        render_ok = False
+        if graphics:
+            try:
+                render_jpeg, width, height = await asyncio.to_thread(
+                    compose_render, data, graphics, src_w)
+                self.storage.insert_image(ts, self.cfg.name, cell.name, "render",
+                                          render_jpeg, "image/jpeg")
+                render_ok = True
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("render image for %s failed: %s", cell.name, exc)
+
+        size = f"{width}×{height}"
+        try:
+            # 同时记一条样本，让图像单元格出现在合表中
+            self.storage.insert_sample(ts, self.cfg.name, cell.name,
+                                       f"[图像 {size}]", None)
+        except Exception as exc:
+            log.warning("store image sample %s failed: %s", cell.name, exc)
+        self._push("image", {cell.name: f"图像+渲染图 {size}" if render_ok
+                             else f"图像 {size}"})
 
 
 class Monitor:

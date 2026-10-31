@@ -34,9 +34,11 @@ def ensure_subdirs(root: Path) -> None:
 
 
 # 单元格数据类型：设置时通常未知，用 auto 让运行时按值推断
-CELL_DATA_TYPES = ("auto", "int", "float", "string", "bool", "other")
+CELL_DATA_TYPES = ("auto", "int", "float", "string", "bool", "image", "other")
 # 仅数值类型应用上下限阈值；auto 在运行时尝试按数值解析
 NUMERIC_DATA_TYPES = {"auto", "int", "float"}
+# 图像类型：从相机下载图像（A0 额外取结果渲染图），不参与阈值判定
+IMAGE_DATA_TYPE = "image"
 
 # 记录模式：simple=仅记录数据不做阈值判定；advanced=记录并按上下限判定 OK/NG
 CELL_RECORD_MODES = ("simple", "advanced")
@@ -65,6 +67,11 @@ class CellConfig:
     def is_simple_record(self) -> bool:
         """是否为简单记录模式（不做阈值判定）。"""
         return self.record_mode == "simple"
+
+    @property
+    def is_image(self) -> bool:
+        """是否为图像类型（从相机下载图像，不限上下限）。"""
+        return self.data_type == IMAGE_DATA_TYPE
 
 
 @dataclass

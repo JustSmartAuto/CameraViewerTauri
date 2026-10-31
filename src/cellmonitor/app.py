@@ -46,6 +46,8 @@ def main(argv=None) -> None:
             cameras.append(CameraConfig(
                 name="模拟相机", host="127.0.0.1", port=8087,
                 cells=[
+                    CellConfig(name="A0", data_type="image", record_mode="simple",
+                               note="采集图/渲染图"),
                     CellConfig(name="A1", sample_mode="event", lower=9.5, upper=10.5, unit="mm"),
                     CellConfig(name="Measure.Score", sample_mode="poll", poll_interval=1.0,
                                lower=90),

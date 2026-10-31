@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS samples (
     ok INTEGER                      -- 1=合格 0=超差 NULL=无阈值
 );
 CREATE INDEX IF NOT EXISTS idx_samples_cam_cell ON samples(camera, cell, ts);
+
+CREATE TABLE IF NOT EXISTS images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,               -- ISO8601 本地时间（同一次拍照共用）
+    camera TEXT NOT NULL,
+    cell TEXT NOT NULL,
+    kind TEXT NOT NULL,             -- image=原始图 render=结果渲染图
+    mime TEXT,                      -- 如 image/png
+    width INTEGER,
+    height INTEGER,
+    data BLOB NOT NULL              -- 图像二进制
+);
+CREATE INDEX IF NOT EXISTS idx_images_cam_cell ON images(camera, cell, ts);
 """
 
 
@@ -62,6 +75,60 @@ class Storage:
                 (ts.isoformat(timespec="milliseconds"), camera, cell, value, str(raw), ok),
             )
             self._conn.commit()
+
+    def insert_image(
+        self,
+        ts: datetime,
+        camera: str,
+        cell: str,
+        kind: str,
+        data: bytes,
+        mime: str = "image/png",
+    ) -> tuple[int | None, int | None]:
+        """写入图像 BLOB，返回 (宽, 高)（无法解析时为 None）。"""
+        width = height = None
+        try:
+            from io import BytesIO
+
+            from PIL import Image as PILImage
+
+            with PILImage.open(BytesIO(data)) as im:
+                width, height = im.size
+        except Exception:
+            pass
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO images (ts, camera, cell, kind, mime, width, height, data)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (ts.isoformat(timespec="milliseconds"), camera, cell, kind,
+                 mime, width, height, data),
+            )
+            self._conn.commit()
+        return width, height
+
+    def query_images(
+        self,
+        camera: str,
+        cell: str,
+        kind: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[tuple[str, str, str, int | None, int | None, bytes]]:
+        """返回 [(ts, kind, mime, width, height, data)]，按时间升序。"""
+        sql = "SELECT ts, kind, mime, width, height, data FROM images WHERE camera=? AND cell=?"
+        args: list = [camera, cell]
+        if kind:
+            sql += " AND kind=?"
+            args.append(kind)
+        if start:
+            sql += " AND ts>=?"
+            args.append(start.isoformat(timespec="milliseconds"))
+        if end:
+            sql += " AND ts<=?"
+            args.append(end.isoformat(timespec="milliseconds"))
+        sql += " ORDER BY ts"
+        with self._lock:
+            return self._conn.execute(sql, args).fetchall()
 
     def query(
         self,
@@ -126,9 +193,11 @@ def export_xlsx(
     start: datetime | None = None,
     end: datetime | None = None,
     notes: dict[str, str] | None = None,
+    image_cells: set[str] | None = None,
 ) -> Path:
     """按 单元格 生成工作表导出（文件名带时间戳后缀）。
 
+    图像单元格：直接嵌入图像（原始图工作表 + A0 的渲染图工作表）。
     额外生成「合表」工作表：将同一时间戳（同一次拍照）下所有单元格的值
     合并到同一行，列名为单元格名，便于观察同一次检测中各数据的相互关系。
     """
@@ -139,8 +208,13 @@ def export_xlsx(
     red = PatternFill("solid", start_color="FFC7CE")
     bold = Font(bold=True)
     notes = notes or {}
+    image_cells = set(image_cells or ())
     cell_names = storage.cells(camera)
     for cell in cell_names:
+        if cell in image_cells:
+            _append_image_sheets(wb, storage, camera, cell, notes.get(cell, ""), bold,
+                                 start, end)
+            continue
         rows = storage.query(camera, cell, start, end)
         ws = wb.create_sheet(title=cell[:31])
         ws.append(["时间戳", "数值", "原始值", "判定"])
@@ -192,3 +266,48 @@ def export_xlsx(
     path = out_dir / f"{camera}{timestamp_suffix()}.xlsx"
     wb.save(path)
     return path
+
+
+def _embed_image(ws, row: int, data: bytes, max_width: int = 480) -> bool:
+    """把图像 BLOB 嵌入单元格（B{row}），返回是否成功。"""
+    from io import BytesIO
+
+    from openpyxl.drawing.image import Image as XLImage
+
+    try:
+        img = XLImage(BytesIO(data))
+    except Exception:
+        return False
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img.width = max_width
+        img.height = int(img.height * ratio)
+    ws.add_image(img, f"B{row}")
+    # 行高按像素换算为磅（1px ≈ 0.75pt），避免图像压到下一行
+    ws.row_dimensions[row].height = max(15, img.height * 0.75)
+    return True
+
+
+def _append_image_sheets(wb, storage: Storage, camera: str, cell: str, note: str,
+                         bold, start, end) -> None:
+    """图像单元格：原始图与渲染图各生成一个嵌入式工作表。"""
+    rows = storage.query_images(camera, cell, start=start, end=end)
+    for kind, title in (("image", cell[:31]), ("render", f"{cell}渲染图"[:31])):
+        items = [r for r in rows if r[1] == kind]
+        if not items:
+            continue
+        ws = wb.create_sheet(title=title)
+        ws.column_dimensions["A"].width = 26
+        ws.column_dimensions["B"].width = 72
+        ws.append(["时间戳", "图像"])
+        for c in ws[1]:
+            c.font = bold
+        if note:
+            ws["D1"] = "注解"
+            ws["D1"].font = bold
+            ws["D2"] = note
+        for i, (ts, _kind, _mime, width, height, data) in enumerate(items, start=2):
+            ws.cell(row=i, column=1, value=ts)
+            if not _embed_image(ws, i, data):
+                ws.cell(row=i, column=2, value=f"[图像 {width}×{height}]")
+        ws.freeze_panes = "A2"

@@ -124,7 +124,10 @@ class CameraPanel(tk.Frame):
             value.pack(side="left")
             self.value_labels[cell.name] = value
             self._value_tips[cell.name] = Tooltip(value)
-            if cell.is_simple_record:
+            if cell.is_image:
+                tk.Label(row, text="图像", bg=C["chrome_lighter"],
+                         fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
+            elif cell.is_simple_record:
                 tk.Label(row, text="仅记录", bg=C["chrome_lighter"],
                          fg=C["chrome_dark"], font=theme.FONT).pack(side="right")
             elif cell.is_numeric:
@@ -348,6 +351,9 @@ class MonitorApp:
                 elif kind == "result" and panel:
                     for cell, value in (payload or {}).items():
                         panel.set_value(cell, value)
+                elif kind == "image" and panel:
+                    for cell, text in (payload or {}).items():
+                        panel.set_value(cell, text)
         except Exception:
             pass
         self.root.after(100, self._poll_events)
@@ -410,6 +416,9 @@ class MonitorApp:
         if not cell_name:
             return
         cell_cfg = next((c for c in cfg.cells if c.name == cell_name), None)
+        if cell_cfg and cell_cfg.is_image:
+            messagebox.showinfo("提示", f"单元格「{cell_name}」为图像类型，没有数值趋势可绘制。")
+            return
         if cell_cfg and cell_cfg.data_type in ("string", "bool", "other"):
             messagebox.showinfo("提示",
                                 f"单元格「{cell_name}」为 {cell_cfg.data_type} 类型，"
@@ -442,7 +451,8 @@ class MonitorApp:
     def export_camera(self, cfg: CameraConfig):
         try:
             path = export_xlsx(self.storage, cfg.name, self.data_dir / "xlsx",
-                               notes={c.name: c.note for c in cfg.cells})
+                               notes={c.name: c.note for c in cfg.cells},
+                               image_cells={c.name for c in cfg.cells if c.is_image})
         except Exception as exc:
             messagebox.showerror("导出失败", str(exc))
             return
@@ -472,10 +482,12 @@ class MonitorApp:
 # 名称,数据类型,记录模式,event|poll,轮询间隔秒,下限,上限,单位,注解
 _CELL_TEXT_HINT = (
     "每行一个单元格：名称,数据类型,记录模式,event|poll,轮询间隔秒,下限,上限,单位,注解\n"
-    "数据类型：auto（未知·运行时推断）/ int / float / string / bool / other\n"
+    "数据类型：auto（未知·运行时推断）/ int / float / string / bool / image（图像）/ other\n"
     "记录模式：simple（仅记录·不判定）/ advanced（记录+阈值判定）\n"
     "上下限仅对 advanced + int/float/auto 有效；simple 模式忽略阈值\n"
+    "image 类型：从相机下载图像存 BLOB 并嵌入 xlsx；A0 另外保存结果渲染图\n"
     "示例：C36,float,advanced,event,0,175,182,mm,焊缝宽度\n"
+    "      A0,image,simple,event,0,,,,,\n"
     "      Status,string,simple,event,0,,,,,判定结果"
 )
 
@@ -646,6 +658,10 @@ class CellFormDialog(tk.Toplevel):
         if simple:
             self._hint_label.config(
                 text="简单记录模式：仅记录单元格数值，不做上下限阈值判定，判定结果恒为 NULL。",
+                fg=C["teal"])
+        elif self._type_var.get() == "image":
+            self._hint_label.config(
+                text="图像类型：从相机下载图像存入数据库并嵌入 xlsx；A0 另外保存结果渲染图。",
                 fg=C["teal"])
         elif numeric:
             self._hint_label.config(
