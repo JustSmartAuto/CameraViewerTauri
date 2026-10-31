@@ -19,11 +19,13 @@
 
 | 项 | 方案 |
 |---|---|
+| 语言/环境 | Python 3.13 |
+| 包管理 | [uv](https://github.com/astral-sh/uv)（`pyproject.toml` + `uv.lock`） |
 | 相机通信 | CogSocket WebSocket（JSON-RPC：GET/POST/PUT/DELETE + 事件订阅），参考 `reference/CogSocket&WebApi.md` |
 | 数据存储 | `openpyxl`（xlsx）+ 标准库 `sqlite3` |
 | 图表 | `matplotlib`（中文字体从 `assets/*.ttf` 加载，不依赖系统字体） |
 | 界面 | tkinter / Web（参照 CameraHelper 的多相机宫格交互） |
-| 打包 | PyInstaller `--add-data assets`（字体、图标随 exe 分发） |
+| 打包 | PyInstaller 单文件 exe，命名 `exe_{yyyyMMddHHmmss}`（如 `exe_20261031113000`），logo 使用 `assets/app_icon.ico`（`--icon` + `--add-data assets`） |
 
 ## 目录
 
