@@ -99,6 +99,7 @@ class MonitorApp:
 
         self.root = tk.Tk()
         self.root.title("CameraCellMonitor — Cognex In-Sight 单元格数据监控器")
+        self.root.geometry("800x600")
         theme.apply(self.root)
         self._build_ui()
         self._start_asyncio_thread()

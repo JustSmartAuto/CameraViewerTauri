@@ -17,7 +17,7 @@ ASSETS = ROOT / "assets"
 
 def main() -> None:
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    name = f"exe_{stamp}"
+    name = f"CameraCellMonitor_{stamp}"
     icon = ASSETS / "app_icon.ico"
     cmd = [
         sys.executable, "-m", "PyInstaller",
