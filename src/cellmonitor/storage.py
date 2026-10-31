@@ -90,6 +90,25 @@ class Storage:
             ).fetchall()
         return [r[0] for r in rows]
 
+    def query_all(
+        self,
+        camera: str,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[tuple[str, str, float | None, str, int | None]]:
+        """返回某相机全部采样点 [(ts, cell, value, text, ok)]，按时间升序。"""
+        sql = "SELECT ts, cell, value, text, ok FROM samples WHERE camera=?"
+        args: list = [camera]
+        if start:
+            sql += " AND ts>=?"
+            args.append(start.isoformat(timespec="milliseconds"))
+        if end:
+            sql += " AND ts<=?"
+            args.append(end.isoformat(timespec="milliseconds"))
+        sql += " ORDER BY ts, cell"
+        with self._lock:
+            return self._conn.execute(sql, args).fetchall()
+
     def cameras(self) -> list[str]:
         with self._lock:
             rows = self._conn.execute("SELECT DISTINCT camera FROM samples ORDER BY camera").fetchall()
@@ -108,13 +127,20 @@ def export_xlsx(
     end: datetime | None = None,
     notes: dict[str, str] | None = None,
 ) -> Path:
-    """按 单元格 生成工作表导出（文件名带时间戳后缀）。"""
+    """按 单元格 生成工作表导出（文件名带时间戳后缀）。
+
+    额外生成「合表」工作表：将同一时间戳（同一次拍照）下所有单元格的值
+    合并到同一行，列名为单元格名，便于观察同一次检测中各数据的相互关系。
+    """
+    from collections import defaultdict
+
     wb = Workbook()
     wb.remove(wb.active)
     red = PatternFill("solid", start_color="FFC7CE")
     bold = Font(bold=True)
     notes = notes or {}
-    for cell in storage.cells(camera):
+    cell_names = storage.cells(camera)
+    for cell in cell_names:
         rows = storage.query(camera, cell, start, end)
         ws = wb.create_sheet(title=cell[:31])
         ws.append(["时间戳", "数值", "原始值", "判定"])
@@ -131,6 +157,37 @@ def export_xlsx(
                     c.fill = red
         if ws.max_row > 1:
             ws.auto_filter.ref = f"A1:D{ws.max_row}"
+
+    # 合表：同一次拍照（同一时间戳）的所有单元格合并到一行
+    if cell_names:
+        all_rows = storage.query_all(camera, start, end)
+        grouped: dict[str, dict[str, tuple[float | None, str, int | None]]] = defaultdict(dict)
+        for ts, cell, value, text, ok in all_rows:
+            grouped[ts][cell] = (value, text, ok)
+        ws = wb.create_sheet(title="合表", index=0)
+        headers = ["时间戳"]
+        for cell in cell_names:
+            note = notes.get(cell, "")
+            headers.append(f"{cell}（{note}）" if note else cell)
+        ws.append(headers)
+        for c in ws[1]:
+            c.font = bold
+        for ts in sorted(grouped):
+            row_vals = grouped[ts]
+            # 优先显示数值，无法转数值时显示原始文本
+            row = [ts]
+            for cell in cell_names:
+                item = row_vals.get(cell)
+                if item is None:
+                    row.append(None)
+                else:
+                    value, text, _ok = item
+                    row.append(value if value is not None else text)
+            ws.append(row)
+        if ws.max_row > 1:
+            ws.auto_filter.ref = f"A1:{ws.cell(row=1, column=len(cell_names)+1).coordinate}"
+            ws.freeze_panes = "B2"
+
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{camera}{timestamp_suffix()}.xlsx"
     wb.save(path)

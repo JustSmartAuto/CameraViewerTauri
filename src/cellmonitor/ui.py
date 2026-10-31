@@ -31,6 +31,7 @@ STATUS_TEXT = {
     "offline": "离线",
     "connecting": "连接中",
     "connected": "已连接",
+    "disconnected": "已断开",
     "error": "错误",
 }
 
@@ -96,7 +97,8 @@ class CameraPanel(tk.Frame):
     def set_status(self, status: str, detail: str = "") -> None:
         self.status = status
         colors = {"offline": C["chrome_darker"], "connecting": C["yellow_dark"],
-                  "connected": C["teal"], "error": C["red_dot"]}
+                  "connected": C["teal"], "disconnected": C["chrome_darker"],
+                  "error": C["red_dot"]}
         self.status_label.config(text=STATUS_TEXT.get(status, status),
                                  fg=colors.get(status, C["ink"]))
 

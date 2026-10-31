@@ -69,6 +69,10 @@ class CameraWorker:
         self._poll_tasks.clear()
         if self._task:
             self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
         await self.client.close()
 
     def _push(self, kind: str, payload=None) -> None:
@@ -187,6 +191,10 @@ class Monitor:
         worker = self.workers.pop(name, None)
         if worker:
             await worker.stop()
+        try:
+            self.events.put_nowait((name, "disconnected", None))
+        except queue.Full:
+            pass
 
     async def stop_all(self) -> None:
         for name in list(self.workers):
