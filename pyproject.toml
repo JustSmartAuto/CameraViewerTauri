@@ -1,6 +1,6 @@
 [project]
 name = "camera-cell-monitor"
-version = "0.1.0"
+version = "26.10.31.16"
 description = "Cognex In-Sight 单元格数据监控器（CogSocket 订阅 + SQLite/xlsx 落库 + 趋势图表）"
 requires-python = ">=3.13"
 dependencies = [

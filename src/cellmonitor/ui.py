@@ -388,7 +388,8 @@ class MonitorApp:
             messagebox.showinfo("提示", "暂无相机，请先添加。")
             return
         names = [c.name for c in self.cameras]
-        name = simpledialog.askstring("配置单元格", f"相机名（{', '.join(names)}）：", parent=self.root)
+        dlg = CameraSelectDialog(self.root, names)
+        name = dlg.result
         if not name:
             return
         cfg = next((c for c in self.cameras if c.name == name), None)
@@ -712,6 +713,47 @@ class CellFormDialog(tk.Toplevel):
         self.destroy()
 
 
+class CameraSelectDialog(tk.Toplevel):
+    """相机选择对话框：下拉框可直接选择，也可手动输入相机名。"""
+
+    def __init__(self, parent, camera_names: list[str]):
+        super().__init__(parent)
+        self.title("配置单元格")
+        self.result: str | None = None
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        theme.title_tab(self, "配置单元格")
+
+        body = tk.Frame(self, bg=C["chrome"])
+        body.pack(fill="x", padx=12, pady=10)
+
+        tk.Label(body, text="选择或输入相机名：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).pack(anchor="w", pady=(0, 4))
+
+        self._var = tk.StringVar()
+        self._combo = ttk.Combobox(body, textvariable=self._var, values=camera_names,
+                                   width=32)
+        self._combo.pack(fill="x")
+        if camera_names:
+            self._combo.current(0)
+        self._combo.bind("<Return>", lambda e: self._ok())
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=(0, 10))
+        theme.beos_button(btns, "确定", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self.grab_set()
+        self._combo.focus_set()
+        parent.wait_window(self)
+
+    def _ok(self) -> None:
+        val = self._var.get().strip()
+        if val:
+            self.result = val
+        self.destroy()
+
+
 class CellEditorDialog(tk.Toplevel):
     """交互式单元格编辑器：表格 + 增删改 + 文本编辑回退。"""
 
@@ -725,6 +767,7 @@ class CellEditorDialog(tk.Toplevel):
         self.result: list[CellConfig] | None = None
         self.transient(parent)
         self.configure(bg=C["chrome"])
+        self.maxsize(820, 600)  # 限制窗口最大宽度，避免表格过宽
         theme.title_tab(self, "订阅单元格", f"{len(cells)} 个")
 
         self._cells: list[CellConfig] = [CellConfig(**c.__dict__) for c in cells]
