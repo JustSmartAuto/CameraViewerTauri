@@ -10,6 +10,7 @@ import asyncio
 import logging
 import threading
 import unicodedata
+from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
@@ -231,6 +232,10 @@ class MonitorApp:
 
     def _build_menubar(self) -> None:
         menubar = tk.Menu(self.root, bg=C["chrome"], fg=C["ink"], font=theme.FONT)
+        data_menu = tk.Menu(menubar, tearoff=0)
+        data_menu.add_command(label="删除相机数据", command=self.delete_camera_data)
+        data_menu.add_command(label="导出", command=self.export_data)
+        menubar.add_cascade(label="数据", menu=data_menu)
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="使用说明", command=self.show_help)
         help_menu.add_command(label="关于", command=self.show_about)
@@ -412,10 +417,23 @@ class MonitorApp:
         if not cfg.cells:
             messagebox.showinfo("提示", "该相机未配置单元格。")
             return
-        names = [c.name for c in cfg.cells]
-        cell_name = simpledialog.askstring("趋势图", f"单元格（{', '.join(names)}）：", parent=self.root)
-        if not cell_name:
+        dlg = ChartCellSelectDialog(self.root, cfg.name, self.storage)
+        if dlg.result is None:
             return
+        text_cell, selected_cells = dlg.result
+
+        # 文本框与多选框取并集：文本框填写的单元格 + 勾选的单元格
+        targets: list[str] = []
+        if text_cell:
+            targets.append(text_cell)
+        for c in selected_cells:
+            if c not in targets:
+                targets.append(c)
+        for cell_name in targets:
+            self._plot_cell_chart(cfg, cell_name)
+
+    def _plot_cell_chart(self, cfg: CameraConfig, cell_name: str) -> None:
+        """绘制单个单元格的趋势图并统计。"""
         cell_cfg = next((c for c in cfg.cells if c.name == cell_name), None)
         if cell_cfg and cell_cfg.is_image:
             messagebox.showinfo("提示", f"单元格「{cell_name}」为图像类型，没有数值趋势可绘制。")
@@ -427,7 +445,7 @@ class MonitorApp:
             return
         points = self.storage.query(cfg.name, cell_name)
         if not points:
-            messagebox.showinfo("提示", "该单元格暂无数据。")
+            messagebox.showinfo("提示", f"单元格「{cell_name}」暂无数据。")
             return
         path = self.data_dir / "charts" / f"{cfg.name}_{cell_name}{timestamp_suffix()}.png"
         title = f"{cfg.name} / {cell_name}"
@@ -454,6 +472,54 @@ class MonitorApp:
             path = export_xlsx(self.storage, cfg.name, self.data_dir / "xlsx",
                                notes={c.name: c.note for c in cfg.cells},
                                image_cells={c.name for c in cfg.cells if c.is_image})
+        except Exception as exc:
+            messagebox.showerror("导出失败", str(exc))
+            return
+        self._log(f"xlsx 已导出: {path}")
+
+    def _camera_names(self) -> list[str]:
+        """合并配置中的相机名与数据库中有数据的相机名。"""
+        names = list(dict.fromkeys(
+            [c.name for c in self.cameras] + self.storage.cameras()
+        ))
+        return names
+
+    def delete_camera_data(self) -> None:
+        """数据 → 删除相机数据：选择相机 + 勾选单元格删除。"""
+        if not self._camera_names():
+            messagebox.showinfo("提示", "暂无相机数据。")
+            return
+        dlg = DeleteDataDialog(self.root, self._camera_names(), self.storage)
+        if dlg.result is not None:
+            camera, cells = dlg.result
+            total = 0
+            for cell in cells:
+                total += self.storage.delete_samples(camera, cell)
+                total += self.storage.delete_images(camera, cell)
+            if not cells:
+                # 未勾选单元格 → 删除该相机全部数据
+                total += self.storage.delete_samples(camera)
+                total += self.storage.delete_images(camera)
+            self._log(f"已删除相机「{camera}」{len(cells) or '全部'} 个单元格数据，"
+                      f"共 {total} 条")
+
+    def export_data(self) -> None:
+        """数据 → 导出：选择相机 + 单元格 + 时间范围，选择性导出 xlsx。"""
+        if not self._camera_names():
+            messagebox.showinfo("提示", "暂无相机数据。")
+            return
+        dlg = ExportDialog(self.root, self._camera_names(), self.storage)
+        if dlg.result is None:
+            return
+        camera, cells, start, end = dlg.result
+        cfg = next((c for c in self.cameras if c.name == camera), None)
+        notes = {c.name: c.note for c in cfg.cells} if cfg else {}
+        image_cells = {c.name for c in cfg.cells if c.is_image} if cfg else set()
+        try:
+            path = export_xlsx(self.storage, camera, self.data_dir / "xlsx",
+                               start=start, end=end, notes=notes,
+                               image_cells=image_cells,
+                               cells=cells if cells else None)
         except Exception as exc:
             messagebox.showerror("导出失败", str(exc))
             return
@@ -751,6 +817,248 @@ class CameraSelectDialog(tk.Toplevel):
         val = self._var.get().strip()
         if val:
             self.result = val
+        self.destroy()
+
+
+def _parse_dt(text: str) -> datetime | None:
+    """解析日期时间文本，支持 YYYY-MM-DD[ HH:MM:SS]，空串返回 None。"""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("/", "-"))
+    except ValueError:
+        try:
+            return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+
+
+class _CellChecklist(tk.Frame):
+    """单元格勾选列表：可全选/反选，返回勾选项。"""
+
+    def __init__(self, master, storage, camera_getter, title: str = "单元格"):
+        super().__init__(master, bg=C["chrome_lighter"])
+        self._storage = storage
+        self._camera_getter = camera_getter
+        self._vars: dict[str, tk.BooleanVar] = {}
+
+        header = tk.Frame(self, bg=C["chrome_lighter"])
+        header.pack(fill="x", padx=4, pady=2)
+        self._all_var = tk.BooleanVar(value=False)
+        self._all_cb = tk.Checkbutton(header, text="全选", variable=self._all_var,
+                                      command=self._toggle_all, bg=C["chrome_lighter"],
+                                      fg=C["ink"], font=theme.FONT)
+        self._all_cb.pack(side="left")
+        self._count_label = tk.Label(header, text="", bg=C["chrome_lighter"],
+                                     fg=C["chrome_dark"], font=theme.FONT)
+        self._count_label.pack(side="right")
+
+        self._body = tk.Frame(self, bg=C["chrome_lighter"])
+        self._body.pack(fill="both", expand=True, padx=4, pady=2)
+
+    def _toggle_all(self) -> None:
+        val = self._all_var.get()
+        for v in self._vars.values():
+            v.set(val)
+
+    def refresh(self) -> None:
+        for child in self._body.winfo_children():
+            child.destroy()
+        self._vars.clear()
+        camera = self._camera_getter()
+        cells = self._storage.cells(camera) if camera else []
+        for cell in cells:
+            var = tk.BooleanVar(value=False)
+            cb = tk.Checkbutton(self._body, text=cell, variable=var,
+                                bg=C["chrome_lighter"], fg=C["ink"], font=theme.FONT,
+                                anchor="w")
+            cb.pack(fill="x", anchor="w")
+            self._vars[cell] = var
+        self._count_label.config(text=f"共 {len(cells)} 个单元格" if cells else "该相机暂无数据")
+        self._all_var.set(False)
+
+    def selected(self) -> list[str]:
+        return [c for c, v in self._vars.items() if v.get()]
+
+
+class DeleteDataDialog(tk.Toplevel):
+    """删除相机数据：选择相机 + 勾选单元格。未勾选单元格则删除该相机全部数据。"""
+
+    def __init__(self, parent, camera_names: list[str], storage):
+        super().__init__(parent)
+        self.title("删除相机数据")
+        self.result: tuple[str, list[str]] | None = None
+        self._storage = storage
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        self.maxsize(480, 560)
+        theme.title_tab(self, "删除相机数据")
+
+        top = tk.Frame(self, bg=C["chrome"])
+        top.pack(fill="x", padx=10, pady=8)
+        tk.Label(top, text="选择或输入相机名：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).pack(anchor="w")
+        self._cam_var = tk.StringVar()
+        self._combo = ttk.Combobox(top, textvariable=self._cam_var, values=camera_names,
+                                   width=30)
+        self._combo.pack(fill="x", pady=(2, 0))
+        if camera_names:
+            self._combo.current(0)
+        self._combo.bind("<<ComboboxSelected>>", lambda e: self._cells.refresh())
+        self._combo.bind("<KeyRelease>", lambda e: self._cells.refresh())
+
+        self._cells = _CellChecklist(self, storage, lambda: self._cam_var.get().strip())
+        self._cells.pack(fill="both", expand=True, padx=10, pady=2)
+        self._cells.refresh()
+
+        hint = tk.Label(self, text="提示：不勾选任何单元格将删除该相机全部数据。",
+                        bg=C["chrome"], fg=C["red_dot"], font=theme.FONT)
+        hint.pack(anchor="w", padx=10, pady=(0, 2))
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=8)
+        theme.beos_button(btns, "删除", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self.grab_set()
+        parent.wait_window(self)
+
+    def _ok(self) -> None:
+        camera = self._cam_var.get().strip()
+        if not camera:
+            messagebox.showerror("错误", "请选择或输入相机名。", parent=self)
+            return
+        cells = self._cells.selected()
+        msg = (f"确定删除相机「{camera}」的"
+               f"{('全部' if not cells else str(len(cells)) + ' 个单元格')}数据？\n"
+               "此操作不可恢复。")
+        if not messagebox.askyesno("确认删除", msg, parent=self):
+            return
+        self.result = (camera, cells)
+        self.destroy()
+
+
+class ExportDialog(tk.Toplevel):
+    """选择性导出：相机 + 单元格 + 时间范围。"""
+
+    def __init__(self, parent, camera_names: list[str], storage):
+        super().__init__(parent)
+        self.title("导出数据")
+        self.result: tuple[str, list[str], datetime | None, datetime | None] | None = None
+        self._storage = storage
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        self.maxsize(520, 640)
+        theme.title_tab(self, "导出数据")
+
+        top = tk.Frame(self, bg=C["chrome"])
+        top.pack(fill="x", padx=10, pady=8)
+        tk.Label(top, text="选择或输入相机名：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).pack(anchor="w")
+        self._cam_var = tk.StringVar()
+        self._combo = ttk.Combobox(top, textvariable=self._cam_var, values=camera_names,
+                                   width=30)
+        self._combo.pack(fill="x", pady=(2, 0))
+        if camera_names:
+            self._combo.current(0)
+        self._combo.bind("<<ComboboxSelected>>", lambda e: self._cells.refresh())
+        self._combo.bind("<KeyRelease>", lambda e: self._cells.refresh())
+
+        self._cells = _CellChecklist(self, storage, lambda: self._cam_var.get().strip())
+        self._cells.pack(fill="both", expand=True, padx=10, pady=2)
+        self._cells.refresh()
+
+        time_frame = tk.LabelFrame(self, text="时间范围（可选，留空不限）",
+                                   bg=C["chrome"], fg=C["ink"], font=theme.FONT,
+                                   labelanchor="nw")
+        time_frame.pack(fill="x", padx=10, pady=4)
+        tk.Label(time_frame, text="起：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).grid(row=0, column=0, sticky="e", padx=4, pady=3)
+        self._start_var = tk.StringVar()
+        tk.Entry(time_frame, textvariable=self._start_var, width=22).grid(
+            row=0, column=1, sticky="w", padx=4, pady=3)
+        tk.Label(time_frame, text="止：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).grid(row=1, column=0, sticky="e", padx=4, pady=3)
+        self._end_var = tk.StringVar()
+        tk.Entry(time_frame, textvariable=self._end_var, width=22).grid(
+            row=1, column=1, sticky="w", padx=4, pady=3)
+        tk.Label(time_frame, text="格式：YYYY-MM-DD HH:MM:SS", bg=C["chrome"],
+                 fg=C["chrome_dark"], font=theme.FONT).grid(
+            row=0, column=2, rowspan=2, sticky="w", padx=8)
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=8)
+        theme.beos_button(btns, "导出", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self.grab_set()
+        parent.wait_window(self)
+
+    def _ok(self) -> None:
+        camera = self._cam_var.get().strip()
+        if not camera:
+            messagebox.showerror("错误", "请选择或输入相机名。", parent=self)
+            return
+        start = _parse_dt(self._start_var.get())
+        end = _parse_dt(self._end_var.get())
+        if self._start_var.get().strip() and start is None:
+            messagebox.showerror("错误", "起始时间格式错误，应为 YYYY-MM-DD HH:MM:SS。",
+                                 parent=self)
+            return
+        if self._end_var.get().strip() and end is None:
+            messagebox.showerror("错误", "截止时间格式错误，应为 YYYY-MM-DD HH:MM:SS。",
+                                 parent=self)
+            return
+        cells = self._cells.selected()
+        self.result = (camera, cells, start, end)
+        self.destroy()
+
+
+class ChartCellSelectDialog(tk.Toplevel):
+    """趋势图单元格选择：文本输入框（单个）+ 多选框（批量）。"""
+
+    def __init__(self, parent, camera_name: str, storage):
+        super().__init__(parent)
+        self.title("趋势图")
+        self.result: tuple[str, list[str]] | None = None
+        self.transient(parent)
+        self.configure(bg=C["chrome"])
+        self.maxsize(480, 560)
+        theme.title_tab(self, f"趋势图 - {camera_name}")
+
+        top = tk.Frame(self, bg=C["chrome"])
+        top.pack(fill="x", padx=10, pady=8)
+        tk.Label(top, text="输入单元格名（单个）：", bg=C["chrome"], fg=C["ink"],
+                 font=theme.FONT).pack(anchor="w")
+        self._text_var = tk.StringVar()
+        tk.Entry(top, textvariable=self._text_var, width=30).pack(fill="x", pady=(2, 0))
+
+        self._cells = _CellChecklist(self, storage, lambda: camera_name)
+        self._cells.pack(fill="both", expand=True, padx=10, pady=2)
+        self._cells.refresh()
+
+        hint = tk.Label(
+            self,
+            text="提示：文本框填写则绘制该单元格；勾选多个则逐个绘制趋势图；两者可同时使用。",
+            bg=C["chrome"], fg=C["teal"], font=theme.FONT, justify="left", wraplength=440)
+        hint.pack(anchor="w", padx=10, pady=(0, 2))
+
+        btns = tk.Frame(self, bg=C["chrome"])
+        btns.pack(pady=8)
+        theme.beos_button(btns, "确定", self._ok, default=True).pack(side="left", padx=4)
+        theme.beos_button(btns, "取消", self.destroy).pack(side="left", padx=4)
+
+        self.grab_set()
+        parent.wait_window(self)
+
+    def _ok(self) -> None:
+        text = self._text_var.get().strip()
+        selected = self._cells.selected()
+        if not text and not selected:
+            messagebox.showinfo("提示", "请输入单元格名或勾选单元格。", parent=self)
+            return
+        self.result = (text, selected)
         self.destroy()
 
 

@@ -15,7 +15,29 @@
         "lower": null,
         "upper": null,
         "unit": "",
-        "note": ""
+        "note": "时间"
+      },
+      {
+        "name": "F37",
+        "data_type": "auto",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "点火管最大高度文本"
+      },
+      {
+        "name": "A0",
+        "data_type": "image",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "图片"
       }
     ],
     "reconnect_interval": 5.0,
@@ -125,7 +147,51 @@
         "lower": null,
         "upper": null,
         "unit": "",
-        "note": ""
+        "note": "时间"
+      },
+      {
+        "name": "A0",
+        "data_type": "image",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "图片"
+      },
+      {
+        "name": "C36",
+        "data_type": "auto",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "螺杆与缺口角度"
+      },
+      {
+        "name": "C37",
+        "data_type": "auto",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "针脚检测"
+      },
+      {
+        "name": "C38",
+        "data_type": "auto",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "内壁圆测量"
       }
     ],
     "reconnect_interval": 5.0,
@@ -345,7 +411,29 @@
         "lower": null,
         "upper": null,
         "unit": "",
-        "note": ""
+        "note": "时间"
+      },
+      {
+        "name": "B37",
+        "data_type": "auto",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "两螺柱距离"
+      },
+      {
+        "name": "A0",
+        "data_type": "image",
+        "record_mode": "simple",
+        "sample_mode": "event",
+        "poll_interval": 1.0,
+        "lower": null,
+        "upper": null,
+        "unit": "",
+        "note": "图片"
       }
     ],
     "reconnect_interval": 5.0,
@@ -436,6 +524,16 @@
         "note": ""
       }
     ],
+    "reconnect_interval": 5.0,
+    "enabled": true
+  },
+  {
+    "name": "模拟相机",
+    "host": "127.0.0.1",
+    "port": 8087,
+    "username": "admin",
+    "password": "",
+    "cells": [],
     "reconnect_interval": 5.0,
     "enabled": true
   }

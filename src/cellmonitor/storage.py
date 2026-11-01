@@ -181,6 +181,46 @@ class Storage:
             rows = self._conn.execute("SELECT DISTINCT camera FROM samples ORDER BY camera").fetchall()
         return [r[0] for r in rows]
 
+    def delete_samples(self, camera: str, cell: str | None = None,
+                       start: datetime | None = None,
+                       end: datetime | None = None) -> int:
+        """删除采样数据，返回删除行数。cell=None 时删除该相机全部单元格。"""
+        sql = "DELETE FROM samples WHERE camera=?"
+        args: list = [camera]
+        if cell:
+            sql += " AND cell=?"
+            args.append(cell)
+        if start:
+            sql += " AND ts>=?"
+            args.append(start.isoformat(timespec="milliseconds"))
+        if end:
+            sql += " AND ts<=?"
+            args.append(end.isoformat(timespec="milliseconds"))
+        with self._lock:
+            cur = self._conn.execute(sql, args)
+            self._conn.commit()
+            return cur.rowcount
+
+    def delete_images(self, camera: str, cell: str | None = None,
+                      start: datetime | None = None,
+                      end: datetime | None = None) -> int:
+        """删除图像数据，返回删除行数。"""
+        sql = "DELETE FROM images WHERE camera=?"
+        args: list = [camera]
+        if cell:
+            sql += " AND cell=?"
+            args.append(cell)
+        if start:
+            sql += " AND ts>=?"
+            args.append(start.isoformat(timespec="milliseconds"))
+        if end:
+            sql += " AND ts<=?"
+            args.append(end.isoformat(timespec="milliseconds"))
+        with self._lock:
+            cur = self._conn.execute(sql, args)
+            self._conn.commit()
+            return cur.rowcount
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -194,9 +234,11 @@ def export_xlsx(
     end: datetime | None = None,
     notes: dict[str, str] | None = None,
     image_cells: set[str] | None = None,
+    cells: list[str] | None = None,
 ) -> Path:
     """按 单元格 生成工作表导出（文件名带时间戳后缀）。
 
+    cells=None 时导出该相机全部单元格；指定时仅导出所选单元格。
     图像单元格：直接嵌入图像（原始图工作表 + A0 的渲染图工作表）。
     额外生成「合表」工作表：将同一时间戳（同一次拍照）下所有单元格的值
     合并到同一行，列名为单元格名，便于观察同一次检测中各数据的相互关系。
@@ -209,7 +251,7 @@ def export_xlsx(
     bold = Font(bold=True)
     notes = notes or {}
     image_cells = set(image_cells or ())
-    cell_names = storage.cells(camera)
+    cell_names = cells if cells is not None else storage.cells(camera)
     for cell in cell_names:
         if cell in image_cells:
             _append_image_sheets(wb, storage, camera, cell, notes.get(cell, ""), bold,
