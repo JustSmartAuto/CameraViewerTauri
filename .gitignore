@@ -8,6 +8,7 @@ opt-camera-sdk/*.xml
 bin/
 obj/
 dist/
+publish/
 
 # 系统文件
 .DS_Store
