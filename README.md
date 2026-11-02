@@ -1,40 +1,106 @@
 # CameraViewerDotnet
 
-基于 .NET 8 的 WinForms 工业相机 HMI 网页查看器（复刻 CameraViewerTauri 核心功能），搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序），不易被杀毒软件误删 DLL 导致无法启动。
+基于 .NET 8 的 WinForms 工业相机监控查看器，复刻自 CameraViewerTauri 核心功能并扩展 CogSocket 子网格、文件中转、存图清理等工业需求。搭配 .NET Framework 4.8 启动器，解决工控机无 .NET 8 运行时无法运行的问题。最终分发为**单个便携式 exe**（内嵌 .NET 8 运行时安装包 + 主程序），不易被杀毒软件误删 DLL。
 
 ## 截图
 
 ![CameraViewerDotnet 主界面](assets/screenshot1.png)
 
-主界面：多路相机网格布局，每路格子内嵌 WebView2 加载工业相机 HMI 网页，支持 URL/备注编辑、锁定、刷新、最大化；顶部工具栏含设置、主题切换、语言切换、关于按钮；底部状态栏显示系统时间与版本号。
+主界面：多路相机网格布局（最大 36 格），Http/GigE 内嵌 WebView2 加载工业相机 HMI 网页，CogSocket 相机按 `cellSubscribe` 配置拆成 PictureBox 子网格显示渲染图；顶部 PageHeader + AntdUI.Menu 水平菜单（设置/主题/语言/关于）；底部状态栏显示系统时间与版本号。
 
 ## 功能
 
-- 1–16 路相机网格布局（1/2/4/6/9/16），WebView2 内嵌加载工业相机（康耐视 In-Sight 等）HTTP HMI 网页，URL 自动补 `http://` 前缀
+### 相机接入（三种连接方式）
+
+| 方式 | 说明 | 渲染 |
+|---|---|---|
+| **Http** | 康耐视 In-Sight、海康等 HTTP HMI 网页相机 | WebView2 内嵌加载 HMI 页面 |
+| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 默认 WebView2；**配置 `subGridCount > 1` + `cellSubscribe` 逗号分隔单元格名** → 自动切 PictureBox 子网格模式，每个格子显示对应条件号的渲染图 |
+| **GigE** | 海康、Basler、OPT SciCamera SDK 原生 GigE Vision 相机 | WebView2（通过 SDK 内嵌 HMI 页面） |
+
+### CogSocket 子网格拆分（多面产品场景）
+
+- 相机设置里选 `conn = CogSocket`，输入 IP:Port
+- **`cellSubscribe`**：逗号分隔要显示的拍照标识单元格名，如 `cellResultA,cellResultB,cellResultC,cellResultD`
+- **`subGridCount`**：下拉选择 `[1, 2, 4, 6, 8]`（对应 1×1 / 2×1 / 2×2 / 3×2 / 4×2 布局）
+- 每个格子左上角显示对应 cell 名；**新拍照时自动清空所有子网格**（防止新旧产品图片混淆），然后逐个 cell 结果到达填上新产品的条件号图
+- CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
+
+### 网格布局
+
+- 1–36 路相机布局（1/2/4/6/9/12/16/20/24/25/30/36）
 - 错峰加载：第 i 路相机延时 i×N 秒（默认 10s，可配 0=立即）再加载，避免多路同时打开造成网络风暴
 - 每路格子：URL / 备注编辑（失焦或回车即保存）、锁定（锁定后只读）、刷新、最大化/还原
-- 设置窗口：相机显示（数量、错峰延时）、相机设置（每路 URL/备注/锁定）、显示设置（明亮/暗黑主题）、软件设置（中文/English）
-- **JOBX 作业备份**：设置窗口「JOBX备份」标签页，配置 FTP 相机（名称/IP/端口/用户名/密码/备份目录），一键或全部备份；FTP/FTPS（默认启用，FTPS 才能正常备份 .jobx 文件）+ 信任自签证书；递归下载 `.jobx`/`.jobx.sig`；环形日志实时显示；备份目录支持点击「选择」按钮浏览（`FolderBrowserDialog`）
-- **HMI 语言跟随**：WebView2 注入 `hmi-i18n.js`（`AddScriptToExecuteOnDocumentCreatedAsync`），在 `/pages/hmi/` 页面做整串文本替换中文化，语言跟随软件界面实时切换（`chrome.webview` 消息协议：子→宿主 `ready` 握手，宿主→子 `lang` 下发）
-- **关于页面**：工具栏「关于」按钮，显示应用名/版本号（读取程序集 `InformationalVersion`）/功能描述/技术栈/GitHub 仓库链接
-- URL/备注输入框水印提示（空内容时显示占位文本，语言切换同步刷新）
+
+### 设置窗口（7 个标签页）
+
+| 标签 | 说明 |
+|---|---|
+| **相机显示** | 相机数量、错峰延时 |
+| **相机设置** | 每路卡片：连接方式下拉、URL/序列号/曝光、CogSocket cellSubscribe + subGridCount、备注、锁定 |
+| **显示设置** | 明亮 / 暗黑 / **BeOS teal chrome** 三种 AntdUI 主题 |
+| **软件设置** | 中文 / English，**配置目录切换**（`bootstrap.json` 多开支持） |
+| **文件中转** | 复刻 CameraHelperLens：TransformConfig + 完整 DataGridView 部件编辑器（文件夹部件 / 文件名部件，`AntdUI.Collapse` 可折叠）；文件写入稳定等待；FileSystemWatcher 监听；可选立即处理一次 |
+| **存图清理** | 复刻 CameraHelperLens：CleanConfig（扫描间隔 / 保留天数 OR 剩余空间阈值 / 清理间隔 / 空目录清理）；可配多个清理策略组合 |
+| **JOBX 备份** | FTP/FTPS 相机列表（名称/IP/端口/用户名/密码/备份目录）；一键或全部备份；递归下载 `.jobx`/`.jobx.sig`；环形日志实时显示 |
+
+### 其他
+
+- **HMI 语言跟随**：WebView2 注入 `hmi-i18n.js`（`AddScriptToExecuteOnDocumentCreatedAsync`），在 `/pages/hmi/` 页面做整串文本替换中文化，语言跟随软件界面实时切换
+- **关于页面**：程序集 `InformationalVersion` / 功能描述 / 技术栈 / GitHub 仓库链接
 - 关闭按钮最小化到系统托盘（右键 显示界面/退出）
 - 状态栏显示系统时间与版本号
+- **多开支持**：exe 目录 `bootstrap.json` 里写 `{"configDir":"D:\\AnotherDir"}` 即切配置目录；或设置窗口点「复制并重启」一键切换
 - 配置 JSON 持久化，exe 旁放置 `portable.txt` 即启用便携模式（配置存 exe 旁 `Configs\`），否则存 `%LOCALAPPDATA%\CameraViewerDotnet\`
 
 ## 技术栈
 
 | 部分 | 技术 |
 |---|---|
-| 主程序 `CameraViewer/` | .NET 8 WinForms，**纯 C# 实现（无 XAML）**，AntdUI 2.4.10（Ant Design 风格控件/无边框窗口/明暗主题），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS） |
+| 主程序 `CameraViewer/` | **.NET 8 WinForms**（无 XAML，纯 C#），AntdUI 2.4.10（Ant Design 风格控件 / BeOS chrome 无边框窗口 / 明暗主题），Microsoft.Web.WebView2，FluentFTP 50.1.0（JOBX 备份 FTP/FTPS），**System.Net.WebSockets + HttpClient**（CogSocket 客户端） |
 | 启动器 `CameraViewer.Launcher/` | .NET Framework 4.8（Win10 内置 .NET 4 即可运行），内嵌运行时安装包与主程序 exe 资源 |
-| UI 风格 | AntdUI 控件 + VS Code 配色：暗黑 `#1e1e1e/#252526/#0e639c`，明亮 `#f0f0f0/#0078d4` |
+| UI 风格 | AntdUI 控件 + VS Code 配色（暗黑 `#1e1e1e`，明亮 `#f0f0f0`）+ **BeOS teal chrome** 主题（窗口细边框 + teal/cream 调色） |
 
-启动器工作流程：检测 `Microsoft.WindowsDesktop.App 8.x`（`dotnet --list-runtimes`，PATH 与 `C:\Program Files\dotnet` 双路探测）→ 缺失则静默安装内嵌的 windowsdesktop-runtime-8.0.29 → 每次覆盖释放主程序到 `%LOCALAPPDATA%\CameraViewerDotnet\App\` 并启动。
+启动器工作流程：检测 `Microsoft.WindowsDesktop.App 8.x`（`dotnet --list-runtimes`，PATH 与 `C:\Program Files\dotnet` 双路探测）→ 缺失则静默安装内嵌的 `windowsdesktop-runtime-8.0.29` → 每次覆盖释放主程序到 `%LOCALAPPDATA%\CameraViewerDotnet\App\` 并启动。
+
+### CogSocket 协议（参考 CameraCellMonitor 实测）
+
+```
+WebSocket 握手  ws://host:8087/ws
+  ↓ post @/hello (optional, old firmware may reject — non-fatal)
+  ↓ detect root: GET cam0/hmi/info → fallback system/info
+  ↓ POST {root}/openSession  body={"$type":"HmiSessionInfo","cellNames":[...]}  → 得到 sid
+  ↓ POST {sid}/login  ["admin","",false]  (non-fatal)
+  ↓ listen {sid}/resultChanged  ← 一个事件返回完整 HmiResult.cells[]
+  ↓ POST {sid}/ready  ← 触发相机推第一帧
+  ↓ keepAlive loop 每 15s 发 POST {sid}/keepAlive
+  ↓ 收 event → HmiResult.cells[].data 给 URL → HTTP GET http://host:port{url}?sz=640,h
+  ↓ 解码 Bitmap → PictureBox.Image (BeginInvoke 切 UI 线程)
+  ↓ 必须在回调末尾发 POST {sid}/ready  ← 让相机推下一帧（否则只推一帧就停）
+```
+
+### 文件中转架构（复刻自 CameraHelperLens）
+
+```
+ActionQueueWorker    ConcurrentQueue<TransformAction> + Thread + ManualResetEvent 串行消费
+TransformAction      等待目录文件写入稳定 → 按配置拆分文件夹/文件名 → 组合目标路径 → File.Move
+FileTransformer      FileSystemWatcher 监听 WatchPath → Created 事件 Enqueue
+TransformConfig      Name / IsEnable / WatchPath / SourceSpliter / FolderIndex / FileNameIndex /
+                     FolderSpliter / FileNameSpliter / FolderPartList / FileNamePartList
+TransformPart        PartType(Name|DateTime) / SourceIndex / Format
+```
 
 ## 构建
 
 需要：.NET SDK 8+、MSBuild（Visual Studio 或 .NET Framework 4.8 自带）。
+
+```bash
+dotnet build CameraViewer/CameraViewer.csproj -c Release
+```
+
+产物：`CameraViewer/bin/Release/net8.0-windows/CameraViewerDotnet.dll`
+
+完整单文件打包（含运行时安装器）：
 
 ```bash
 bash build-with-timestamp.sh
@@ -42,7 +108,44 @@ bash build-with-timestamp.sh
 
 产物：`dist/CameraViewerDotnet_<yyyyMMddHHmm>.exe`（约 60MB 单文件，直接拷贝到工控机运行）。
 
+## 目录结构
+
+```
+CameraViewerDotnet/
+├── CameraViewer/                # 主程序
+│   ├── App.cs                   # Main + Transit/Cleaner 初始化
+│   ├── MainWindow.cs            # 36 路网格 + PageHeader + Menu + 状态栏
+│   ├── CameraCell.cs            # WebView2 / CogSocket 子网格 PictureBox（自适应）
+│   ├── SettingsWindow.cs        # 7 标签页设置窗口（含 DataGridView 部件编辑器）
+│   ├── ConfigService.cs         # 模型 + bootstrap.json 多开 + 持久化
+│   ├── I18n.cs                  # zh/en 双语
+│   ├── ThemeManager.cs          # light/dark/beos 主题
+│   ├── AntIcon.cs               # AntdUI 内置 SVG 图标
+│   ├── AboutWindow.cs           # 关于页
+│   ├── CogSocketCamera.cs       # WebSocket 客户端（按 CameraCellMonitor 实测协议）
+│   ├── CogSocketException.cs    # 异常类型
+│   ├── TransformPart.cs         # PartType + TransformPart 模型
+│   ├── ActionQueueWorker.cs     # Lens 复刻：串行队列消费
+│   ├── TransformAction.cs       # Lens 复刻：等稳定→拆分→Move
+│   ├── FileTransformer.cs      # Lens 复刻：FileSystemWatcher 监听
+│   ├── ImageCleaner.cs          # Lens 复刻：Timer 扫描 + 空目录清理（CancellationTokenSource）
+│   └── JobxBackupService.cs     # FTPS 备份
+├── opt-camera-sdk/              # SciCamera SDK（Runtime/ 已 gitignore，本地手动部署）
+│   ├── .gitignore               # Runtime/*.dll / *.xml / Samples_CSharp.zip 忽略规则
+│   ├── README.md
+│   └── SciCamera.Net.dll        # 本地手动拷贝（git ignore 大文件）
+├── CameraViewer.Launcher/       # .NET Framework 4.8 启动器
+├── reference/                   # CogSocket 协议参考、BeOS 主题素材、图标
+├── assets/                      # 截图、ttf 字体（ZhuqueFangsong / Smiley Sans Oblique）
+├── .gitignore                   # opt-camera-sdk/Runtime/ + publish/ + 临时备份
+└── README.md
+```
+
 ## 部署注意事项
 
-- 主程序显示相机网页依赖 **WebView2 运行时**；部分精简版 Win10 工控机可能缺失，首次运行需联网下载，或另行部署 WebView2 离线包(CognexVisionSuit会一起安装)
-- 启动器内嵌 .NET 8 运行时安装包，工控机完全离线也能完成运行时安装
+- **WebView2 运行时**：Http/GigE 模式依赖 WebView2；部分精简版 Win10 工控机可能缺失，首次运行需联网下载，或另行部署 WebView2 离线包
+- **启动器内嵌 .NET 8 运行时**：工控机完全离线也能完成运行时安装
+- **opt-camera-sdk/Runtime/**：SciCamera SDK 原生 DLL 体积大（约 120MB），不进 git；部署时由安装包或 `.zip` 释放到 `opt-camera-sdk/Runtime/`，`SciCamNative.Configure()` 自动定位
+- **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+），多 CameraCell 同 hostPort 时会各自开独立 WebSocket，请控制格子数量
+- **In-Sight IP 端口**：固件 6.x+ 默认 8087，22.2+ 固定 80
+- **ready 握手**：CogSocket 模式下必须在 `resultChanged` 事件回调末尾发 `POST {sid}/ready`，否则相机只推一帧就停（CameraCellMonitor 实测）
