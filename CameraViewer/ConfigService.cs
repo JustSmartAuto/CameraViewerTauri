@@ -9,6 +9,15 @@ namespace CameraViewer
 {
     // ==================== Camera ====================
 
+    /// <summary>拍照标识取值 → 子网格 PictureBox 位置绑定。</summary>
+    public class CellBinding
+    {
+        /// <summary>拍照标识单元格的取值，如 "11"、"21"、"31"、"41"。</summary>
+        public string value { get; set; } = "";
+        /// <summary>子网格中的槽位索引（0-based）。</summary>
+        public int slotIndex { get; set; }
+    }
+
     public class CameraItem
     {
         public int id { get; set; }
@@ -19,9 +28,12 @@ namespace CameraViewer
         public string conn { get; set; } = "http";  // "http" | "cogsocket" | "gige"
         public string serial { get; set; } = "";
         public int exposure { get; set; } = 100;
-        // CogSocket cell subscription + sub-grid
-        public string cellSubscribe { get; set; } = "";
+        // CogSocket: 子网格 PictureBox 数量（1=主图覆盖, >1=多子图模式）
         public int subGridCount { get; set; } = 1;
+        // CogSocket: 拍照标识单元格地址（如 A21），其取值标识第几次拍照
+        public string identifierCell { get; set; } = "";
+        // CogSocket: 标识单元格取值 → 子网格槽位 绑定列表
+        public List<CellBinding> cellBindings { get; set; } = new List<CellBinding>();
     }
 
     public class CameraConfig
@@ -187,7 +199,7 @@ namespace CameraViewer
                 foreach (var n in node["items"]?.AsArray() ?? new JsonArray())
                 {
                     if (n == null) continue;
-                    c.items.Add(new CameraItem
+                    var item = new CameraItem
                     {
                         id = n["id"]?.GetValue<int>() ?? c.items.Count,
                         ip = n["ip"]?.GetValue<string>() ?? "",
@@ -196,9 +208,21 @@ namespace CameraViewer
                         conn = n["conn"]?.GetValue<string>() ?? "http",
                         serial = n["serial"]?.GetValue<string>() ?? "",
                         exposure = n["exposure"]?.GetValue<int>() ?? 100,
-                        cellSubscribe = n["cellSubscribe"]?.GetValue<string>() ?? "",
                         subGridCount = n["subGridCount"]?.GetValue<int>() ?? 1,
-                    });
+                        // 兼容旧配置：cellSubscribe 曾用于填写拍照标识单元格（取首个）
+                        identifierCell = n["identifierCell"]?.GetValue<string>()
+                            ?? (n["cellSubscribe"]?.GetValue<string>() ?? "").Split(',').FirstOrDefault()?.Trim() ?? "",
+                    };
+                    foreach (var b in n["cellBindings"]?.AsArray() ?? new JsonArray())
+                    {
+                        if (b == null) continue;
+                        item.cellBindings.Add(new CellBinding
+                        {
+                            value = b["value"]?.GetValue<string>() ?? "",
+                            slotIndex = b["slotIndex"]?.GetValue<int>() ?? item.cellBindings.Count,
+                        });
+                    }
+                    c.items.Add(item);
                 }
                 Camera = c;
             }

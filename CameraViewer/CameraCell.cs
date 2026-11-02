@@ -26,8 +26,11 @@ namespace CameraViewerDotnet
         // Sub-grid path: cogsocket + subGridCount > 1
         private readonly bool _useSubGrid;
         private readonly int _subGridCount;
-        private readonly string[] _cellNames; // parsed from cellSubscribe
-        private readonly Dictionary<string, PictureBox> _cellToBox = new Dictionary<string, PictureBox>();
+        private readonly string _identifierCell;                      // 拍照标识单元格（如 A21）
+        private readonly List<CellBinding> _bindings;                 // 标识取值 → 槽位
+        private readonly Dictionary<string, int> _valueToSlot = new Dictionary<string, int>();
+        private readonly Dictionary<int, PictureBox> _slotBoxes = new Dictionary<int, PictureBox>();
+        private int _firstSlot = -1;   // 最小绑定槽位：该槽位拍照到达时表示新一轮开始，先清空所有子网格
         private readonly TableLayoutPanel _subGridPanel;
         private CogSocketCamera _cogCam;
 
@@ -47,11 +50,13 @@ namespace CameraViewerDotnet
             Padding = new Padding(1);
 
             // Decide rendering path
-            _useSubGrid = conn == "cogsocket" && item.subGridCount > 1 && !string.IsNullOrWhiteSpace(item.cellSubscribe);
+            _identifierCell = (item.identifierCell ?? "").Trim();
+            _bindings = (item.cellBindings ?? new List<CellBinding>())
+                .Where(b => b != null && !string.IsNullOrWhiteSpace(b.value))
+                .OrderBy(b => b.slotIndex)
+                .ToList();
+            _useSubGrid = conn == "cogsocket" && item.subGridCount > 1 && _bindings.Count > 0 && _identifierCell.Length > 0;
             _subGridCount = _useSubGrid ? Math.Clamp(item.subGridCount, 1, 8) : 1;
-            _cellNames = _useSubGrid
-                ? item.cellSubscribe.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToArray()
-                : Array.Empty<string>();
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = ThemeManager.Bg2 };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -170,7 +175,17 @@ namespace CameraViewerDotnet
             for (int i = 0; i < cols; i++) panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cols));
             for (int i = 0; i < rows; i++) panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
 
-            // Fill cells with PictureBoxes. Use cellNames[i] if available, else generic slot.
+            // 建立 槽位 → 拍照标识取值 映射（槽位号即子网格位置）
+            var slotValue = new Dictionary<int, string>();
+            foreach (var b in _bindings)
+            {
+                if (b.slotIndex < 0 || b.slotIndex >= _subGridCount || slotValue.ContainsKey(b.slotIndex)) continue;
+                var v = b.value.Trim();
+                slotValue[b.slotIndex] = v;
+                _valueToSlot[v] = b.slotIndex;
+            }
+            if (_valueToSlot.Count > 0) _firstSlot = _valueToSlot.Values.Min();
+
             for (int i = 0; i < cols * rows; i++)
             {
                 var pb = new PictureBox
@@ -181,8 +196,8 @@ namespace CameraViewerDotnet
                     BorderStyle = BorderStyle.None,
                     Margin = new Padding(1),
                 };
-                // Label overlay: if there's a cell name, show it
-                string label = i < _cellNames.Length ? _cellNames[i] : $"#{i + 1}";
+                // Label overlay: 显示绑定的拍照标识取值（如 11/21/31/41），未绑定时显示槽位号
+                string label = slotValue.TryGetValue(i, out var sv) ? sv : $"#{i + 1}";
                 pb.Controls.Add(new System.Windows.Forms.Label
                 {
                     Text = label,
@@ -194,9 +209,8 @@ namespace CameraViewerDotnet
                 });
                 panel.Controls.Add(pb, i % cols, i / cols);
 
-                // Map cell name → PictureBox (only for subscribed cells)
-                if (i < _cellNames.Length)
-                    _cellToBox[_cellNames[i]] = pb;
+                if (slotValue.ContainsKey(i))
+                    _slotBoxes[i] = pb;
             }
             return panel;
         }
@@ -219,54 +233,44 @@ namespace CameraViewerDotnet
             if (string.IsNullOrWhiteSpace(item.ip)) return;
             try
             {
-                _cogCam = new CogSocketCamera(item.ip);
-                _cogCam.CellResultUpdated += OnCellResultUpdated;
-                _cogCam.MainFrameUpdated += OnMainFrameUpdated;
-                await _cogCam.ConnectAsync(_cellNames);
+                _cogCam = new CogSocketCamera(item.ip, _identifierCell);
+                _cogCam.SubGridResult += OnSubGridResult;
+                await _cogCam.ConnectAsync(new[] { _identifierCell });
             }
             catch { _cogCam?.Dispose(); _cogCam = null; }
         }
 
-        private void OnCellResultUpdated(string cellName)
+        /// <summary>拍照完成回调（后台线程）：标识取值 → 绑定槽位 → 显示原图。</summary>
+        private void OnSubGridResult(string value, Bitmap bmp)
         {
-            if (!_useSubGrid || IsDisposed) return;
-            if (!_cellToBox.TryGetValue(cellName, out var pb)) return;
+            int slot;
+            if (!_useSubGrid || IsDisposed || bmp == null ||
+                !_valueToSlot.TryGetValue((value ?? "").Trim(), out slot) || !_slotBoxes.ContainsKey(slot))
+            {
+                bmp?.Dispose();
+                return;
+            }
 
-            // Invoke to UI thread (bitmap disposal + PictureBox.Image update must happen on UI thread)
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action(() => UpdatePictureBox(pb, cellName))); } catch { }
+                try { BeginInvoke(new Action(() => ApplySubGridImage(slot, bmp))); }
+                catch { bmp.Dispose(); }
             }
             else
             {
-                UpdatePictureBox(pb, cellName);
+                ApplySubGridImage(slot, bmp);
             }
         }
 
-        private void UpdatePictureBox(PictureBox pb, string cellName)
+        private void ApplySubGridImage(int slot, Bitmap bmp)
         {
-            if (IsDisposed || pb.IsDisposed) return;
-            var srcBmp = _cogCam?.TakeLatestCell(cellName);
-            if (srcBmp == null) return;
-            // Clone to ensure thread-safe ownership (CogSocket may replace its ref concurrently)
-            var clone = (Bitmap)srcBmp.Clone();
+            var pb = _slotBoxes[slot];
+            if (IsDisposed || pb.IsDisposed) { bmp?.Dispose(); return; }
+            // 最小槽位（第一次拍照）到达说明是新一轮产品：先清空上一轮所有子网格，避免新旧混显
+            if (slot == _firstSlot) ClearAllSubGrids();
             var old = pb.Image;
-            pb.Image = clone;
+            pb.Image = bmp;
             old?.Dispose();
-        }
-
-        private void OnMainFrameUpdated()
-        {
-            // New acquisition cycle → clear all sub-grid images to avoid mixing previous product
-            if (!_useSubGrid || IsDisposed) return;
-            if (InvokeRequired)
-            {
-                try { BeginInvoke(new Action(ClearAllSubGrids)); } catch { }
-            }
-            else
-            {
-                ClearAllSubGrids();
-            }
         }
 
         private void ClearAllSubGrids()
@@ -441,8 +445,7 @@ namespace CameraViewerDotnet
             {
                 if (_cogCam != null)
                 {
-                    _cogCam.CellResultUpdated -= OnCellResultUpdated;
-                    _cogCam.MainFrameUpdated -= OnMainFrameUpdated;
+                    _cogCam.SubGridResult -= OnSubGridResult;
                     try { _cogCam.CloseAsync().Wait(TimeSpan.FromSeconds(3)); } catch { }
                     _cogCam.Dispose();
                     _cogCam = null;

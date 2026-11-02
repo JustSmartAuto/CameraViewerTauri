@@ -106,6 +106,15 @@ namespace CameraViewerDotnet
             Margin = new Padding(0, 8, 8, 8),
         };
 
+        /// <summary>标签 + 控件组成一个整体单元，父级 FlowLayoutPanel 换行时不会把标签和输入框拆到两行。</summary>
+        private static FlowLayoutPanel MakeField(string label, Control control)
+        {
+            var field = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(0, 0, 12, 0) };
+            field.Controls.Add(MakeLabel(label));
+            field.Controls.Add(control);
+            return field;
+        }
+
         // ---------- 相机显示 ----------
         private Control BuildDisplayPage()
         {
@@ -199,7 +208,7 @@ namespace CameraViewerDotnet
                     Padding = new Padding(8),
                     Margin = new Padding(0, 0, 0, 8),
                 };
-                int rowCount = conn == "cogsocket" ? 8 : 7;
+                int rowCount = conn == "cogsocket" ? 8 + Math.Clamp(item.subGridCount, 1, 8) : 7;
                 for (int r = 0; r < rowCount; r++) card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
                 var header = MakeLabel(I18n.T("camera") + " " + (i + 1), true);
@@ -302,43 +311,72 @@ namespace CameraViewerDotnet
                     card.Controls.Add(expRow, 0, 3);
                 }
 
-                // CogSocket 专用：cellSubscribe + subGridCount
+                // CogSocket 专用：拍照标识单元格 + 子网格数量 + 标识取值绑定
                 AntdUI.Input cellSubscribeBox = null;
                 AntdUI.Select subGridSelect = null;
+                int nextRow = 3;
+                int gridSlots = Math.Clamp(item.subGridCount, 1, 8);
                 if (conn == "cogsocket")
                 {
                     var cellRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
-                    var cellLabel = MakeLabel(I18n.T("cellSubscribe"));
-                    cellRow.Controls.Add(cellLabel);
+                    cellRow.Controls.Add(MakeLabel(I18n.T("cellSubscribe")));
                     cellSubscribeBox = new AntdUI.Input
                     {
-                        Width = 380, Height = 30,
-                        Text = item.cellSubscribe,
+                        Width = 120, Height = 30,
+                        Text = item.identifierCell,
                         PlaceholderText = I18n.T("cellSubscribePlaceholder"),
                     };
                     cellSubscribeBox.LostFocus += (s, e) =>
                     {
                         var it = ConfigService.EnsureItem(idx);
-                        it.cellSubscribe = cellSubscribeBox.Text;
+                        it.identifierCell = cellSubscribeBox.Text.Trim();
                         ConfigService.SaveCamera();
                     };
                     cellRow.Controls.Add(cellSubscribeBox);
-                    card.Controls.Add(cellRow, 0, 3);
+                    card.Controls.Add(cellRow, 0, nextRow++);
 
                     var subRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
-                    var subLabel = MakeLabel(I18n.T("subGridCount"));
-                    subRow.Controls.Add(subLabel);
+                    subRow.Controls.Add(MakeLabel(I18n.T("subGridCount")));
                     subGridSelect = new AntdUI.Select { Width = 120, Height = 30 };
                     subGridSelect.Items.AddRange(new object[] { "1", "2", "4", "6", "8" });
-                    subGridSelect.SelectedIndex = new[] { 1, 2, 4, 6, 8 }.ToList().IndexOf(Math.Clamp(item.subGridCount, 1, 8));
+                    subGridSelect.SelectedIndex = new[] { 1, 2, 4, 6, 8 }.ToList().IndexOf(gridSlots);
                     subGridSelect.SelectedIndexChanged += (s, e) =>
                     {
                         var it = ConfigService.EnsureItem(idx);
                         it.subGridCount = new[] { 1, 2, 4, 6, 8 }[e.Value];
                         ConfigService.SaveCamera();
+                        // 槽位行数由子网格数量决定，重建设置页
+                        BeginInvoke(new Action(RebuildCameraPage));
                     };
                     subRow.Controls.Add(subGridSelect);
-                    card.Controls.Add(subRow, 0, 4);
+                    card.Controls.Add(subRow, 0, nextRow++);
+
+                    // 每个子网格一行：填写该槽位对应的拍照标识取值（11=第一次、21=第二次…）
+                    for (int slot = 0; slot < gridSlots; slot++)
+                    {
+                        var binding = item.cellBindings.FirstOrDefault(b => b != null && b.slotIndex == slot);
+                        if (binding == null)
+                        {
+                            binding = new CellBinding { slotIndex = slot };
+                            item.cellBindings.Add(binding);
+                        }
+                        var slotRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
+                        slotRow.Controls.Add(MakeLabel(I18n.T("subGridSlot") + " " + (slot + 1) + ":"));
+                        var slotBox = new AntdUI.Input
+                        {
+                            Width = 90, Height = 30,
+                            Text = binding.value,
+                            PlaceholderText = I18n.T("subGridValuePlaceholder"),
+                        };
+                        var target = binding;
+                        slotBox.LostFocus += (s, e) =>
+                        {
+                            target.value = slotBox.Text.Trim();
+                            ConfigService.SaveCamera();
+                        };
+                        slotRow.Controls.Add(slotBox);
+                        card.Controls.Add(slotRow, 0, nextRow++);
+                    }
                 }
 
                 // 备注行
@@ -353,7 +391,7 @@ namespace CameraViewerDotnet
                     ConfigService.SaveCamera();
                 };
                 remarkRow.Controls.Add(remarkBox);
-                card.Controls.Add(remarkRow, 0, conn == "cogsocket" ? 5 : conn == "gige" ? 4 : 3);
+                card.Controls.Add(remarkRow, 0, conn == "cogsocket" ? nextRow : conn == "gige" ? 4 : 3);
 
                 // 锁定行
                 var lockCheck = new AntdUI.Checkbox { Text = I18n.T("locked"), Checked = item.locked, Margin = new Padding(0, 4, 0, 2) };
@@ -366,7 +404,7 @@ namespace CameraViewerDotnet
                     remarkBox.ReadOnly = e.Value;
                     ConfigService.SaveCamera();
                 };
-                card.Controls.Add(lockCheck, 0, conn == "cogsocket" ? 6 : conn == "gige" ? 5 : 4);
+                card.Controls.Add(lockCheck, 0, conn == "cogsocket" ? nextRow + 1 : conn == "gige" ? 5 : 4);
 
                 panel.Controls.Add(card, 0, i);
 
@@ -593,10 +631,10 @@ namespace CameraViewerDotnet
             topRow.Controls.Add(runBtn);
             panel.Controls.Add(topRow, 0, 0);
 
-            // Row 1: WatchPath + 浏览
-            var watchRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
+            // Row 1: WatchPath + 浏览（宽度不足时整组换行，不裁切）
+            var watchRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
             watchRow.Controls.Add(MakeLabel(I18n.T("transitWatch")));
-            var watchBox = new AntdUI.Input { Width = 560, Height = 30, Text = t.WatchPath, PlaceholderText = "D:\\CameraOutput\\待处理" };
+            var watchBox = new AntdUI.Input { Width = 460, Height = 30, Text = t.WatchPath, PlaceholderText = "D:\\CameraOutput\\待处理" };
             watchBox.LostFocus += (s, e) => { t.WatchPath = watchBox.Text.Trim(); };
             watchRow.Controls.Add(watchBox);
             var watchBrowseBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("select"), Margin = new Padding(8, 0, 0, 0) };
@@ -608,29 +646,28 @@ namespace CameraViewerDotnet
             watchRow.Controls.Add(watchBrowseBtn);
             panel.Controls.Add(watchRow, 0, 1);
 
-            // Row 2: 分隔符 + 索引
-            var splitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
-            splitRow.Controls.Add(MakeLabel(I18n.T("transitSourceSplit")));
+            // Row 2: 分隔符 + 索引（标签与输入框成组，宽度不足时整组换行，不拆散也不裁切）
+            var splitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
             var splitBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.SourceSpliter };
             splitBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(splitBox.Text)) t.SourceSpliter = splitBox.Text[0].ToString(); };
-            splitRow.Controls.Add(splitBox);
-            splitRow.Controls.Add(MakeLabel(I18n.T("transitFolderIdx")));
+            splitRow.Controls.Add(MakeField(I18n.T("transitSourceSplit"), splitBox));
             var folderIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = t.FolderIndex };
             folderIdxBox.ValueChanged += (s, e) => { t.FolderIndex = (int)e.Value; };
-            splitRow.Controls.Add(folderIdxBox);
-            splitRow.Controls.Add(MakeLabel(I18n.T("transitFileIdx")));
+            splitRow.Controls.Add(MakeField(I18n.T("transitFolderIdx"), folderIdxBox));
             var fileIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = t.FileNameIndex };
             fileIdxBox.ValueChanged += (s, e) => { t.FileNameIndex = (int)e.Value; };
-            splitRow.Controls.Add(fileIdxBox);
-            splitRow.Controls.Add(MakeLabel(I18n.T("transitFolderSplit")));
+            splitRow.Controls.Add(MakeField(I18n.T("transitFileIdx"), fileIdxBox));
+            panel.Controls.Add(splitRow, 0, 2);
+
+            // Row 3: 目标路径分隔符（单独一行，避免与上面的索引控件挤在同一行被裁切）
+            var targetSplitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
             var folderSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.FolderSpliter };
             folderSpliterBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(folderSpliterBox.Text)) t.FolderSpliter = folderSpliterBox.Text[0].ToString(); };
-            splitRow.Controls.Add(folderSpliterBox);
-            splitRow.Controls.Add(MakeLabel(I18n.T("transitFileSplit")));
+            targetSplitRow.Controls.Add(MakeField(I18n.T("transitFolderSplit"), folderSpliterBox));
             var fileSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.FileNameSpliter };
             fileSpliterBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(fileSpliterBox.Text)) t.FileNameSpliter = fileSpliterBox.Text[0].ToString(); };
-            splitRow.Controls.Add(fileSpliterBox);
-            panel.Controls.Add(splitRow, 0, 2);
+            targetSplitRow.Controls.Add(MakeField(I18n.T("transitFileSplit"), fileSpliterBox));
+            panel.Controls.Add(targetSplitRow, 0, 3);
 
             // Row 3-6: 双 GroupBox（文件夹部件 + 文件名部件）— Lens 原版 DataGridView 编辑器
             var partsSplit = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, AutoSize = true, Padding = new Padding(0, 8, 0, 0) };
@@ -742,7 +779,7 @@ namespace CameraViewerDotnet
 
             fileGroup.Controls.Add(fileInner);
             partsSplit.Controls.Add(fileGroup, 1, 0);
-            panel.Controls.Add(partsSplit, 0, 3);
+            panel.Controls.Add(partsSplit, 0, 4);
 
             scroll.Controls.Add(panel);
             return scroll;

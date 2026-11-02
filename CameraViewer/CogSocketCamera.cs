@@ -40,18 +40,16 @@ namespace CameraViewer
         private string _root = "cam0/hmi";
         private string _sessionId;
 
-        // Latest frame per cell name
-        private readonly ConcurrentDictionary<string, Bitmap> _cellFrames = new();
-        public Bitmap LatestMainFrame { get; private set; }
+        /// <summary>拍照标识单元格地址（如 A21），其取值（11/21/31/41…）标识第几次拍照。</summary>
+        private readonly string _identifierCell;
+
+        /// <summary>一次拍照完成：标识单元格取值 + 本次拍照原图。回调在后台线程，位图由接收方接管释放。</summary>
+        public event Action<string, Bitmap> SubGridResult;
 
         public string IpPort { get; }
         public bool IsConnected => _ws?.State == WebSocketState.Open;
-        public IReadOnlyDictionary<string, Bitmap> CellFrames => _cellFrames;
 
-        public event Action<string> CellResultUpdated;
-        public event Action MainFrameUpdated;
-
-        public CogSocketCamera(string hostPort, string username = "admin", string password = "")
+        public CogSocketCamera(string hostPort, string identifierCell = "", string username = "admin", string password = "")
         {
             var hp = (hostPort ?? "").Trim();
             if (!hp.Contains(':')) hp += ":8087";
@@ -59,10 +57,12 @@ namespace CameraViewer
             var parts = hp.Split(':');
             _host = parts[0];
             _port = int.TryParse(parts[1], out var p) ? p : 8087;
+            _identifierCell = (identifierCell ?? "").Trim();
             _username = username;
             _password = password;
             _wsUri = new Uri($"ws://{_host}:{_port}/ws");
-            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            // 原图可能十几 MB，下载超时放宽
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _http.DefaultRequestHeaders.Add("User-Agent", "CameraViewerDotnet");
         }
 
@@ -117,20 +117,11 @@ namespace CameraViewer
             _sessionId = null;
         }
 
-        public Bitmap TakeLatestCell(string cellName)
-        {
-            _cellFrames.TryGetValue(cellName, out var bmp);
-            return bmp;
-        }
-
         public void Dispose()
         {
             CloseAsync().Wait(TimeSpan.FromSeconds(3));
             _ws?.Dispose();
             _http?.Dispose();
-            foreach (var kv in _cellFrames) kv.Value?.Dispose();
-            _cellFrames.Clear();
-            LatestMainFrame?.Dispose();
         }
 
         // ==================== Request infrastructure ====================
@@ -261,37 +252,40 @@ namespace CameraViewer
             // Fire-and-forget: HTTP download + image decode on thread pool
             _ = Task.Run(async () =>
             {
+                Bitmap bmp = null;
                 try
                 {
-                    // Parse cells
+                    // 1. 从 cells 中取拍照标识单元格的取值（如 A21 = 11/21/31/41）
+                    string shotValue = null;
+                    string cellImageUrl = null;
                     if (hmiResult.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var cell in cells.EnumerateArray())
                         {
                             var loc = cell.TryGetProperty("location", out var l) ? l.GetString()
                                     : cell.TryGetProperty("name", out var n) ? n.GetString() : null;
-                            if (string.IsNullOrEmpty(loc)) continue;
-
-                            var bmp = await DecodeCellImageAsync(cell);
-                            if (bmp != null)
-                            {
-                                if (_cellFrames.TryRemove(loc, out var old)) old?.Dispose();
-                                _cellFrames.TryAdd(loc, bmp);
-                                CellResultUpdated?.Invoke(loc);
-                            }
+                            if (string.IsNullOrEmpty(loc) || !SameCell(loc, _identifierCell)) continue;
+                            shotValue = ExtractCellValue(cell);
+                            cellImageUrl = ExtractCellImageUrl(cell);
                         }
                     }
 
-                    // Main acquisition image
-                    var mainBmp = await DecodeMainImageAsync(hmiResult);
-                    if (mainBmp != null)
+                    // 2. 取原图（不缩放）：标识单元格自带图像地址时优先，否则用主采集视图
+                    if (!string.IsNullOrEmpty(cellImageUrl))
+                        bmp = await FetchImageAsync(cellImageUrl);
+                    if (bmp == null)
+                        bmp = await DecodeMainImageAsync(hmiResult);
+                    if (bmp == null || string.IsNullOrEmpty(shotValue))
                     {
-                        LatestMainFrame?.Dispose();
-                        LatestMainFrame = mainBmp;
-                        MainFrameUpdated?.Invoke();
+                        bmp?.Dispose();
+                        return;
                     }
+
+                    // 3. 交给界面按其绑定槽位显示
+                    SubGridResult?.Invoke(shotValue, bmp);
+                    bmp = null;
                 }
-                catch { }
+                catch { bmp?.Dispose(); }
                 finally
                 {
                     // MUST send ready so camera pushes next frame (Python worker.py L138 comment)
@@ -300,19 +294,43 @@ namespace CameraViewer
             });
         }
 
-        private async Task<Bitmap> DecodeCellImageAsync(JsonElement cell)
+        /// <summary>单元格地址比较：忽略大小写、$ 包裹与空白（A21 / $A$21）。</summary>
+        private static bool SameCell(string a, string b)
         {
-            var data = cell.TryGetProperty("data", out var d) ? d : default;
-            string url = null;
-            if (data.ValueKind == JsonValueKind.String)
-                url = data.GetString();
-            else if (data.ValueKind == JsonValueKind.Object)
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            static string Norm(string s) => s.Replace("$", "").Replace(" ", "").Trim().ToUpperInvariant();
+            return Norm(a) == Norm(b);
+        }
+
+        /// <summary>HmiResult.cells[] 取值：优先 value，其次 data。</summary>
+        private static string ExtractCellValue(JsonElement cell)
+        {
+            foreach (var key in new[] { "value", "data" })
             {
-                if (data.TryGetProperty("url", out var u)) url = u.GetString();
-                else if (data.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String) url = v.GetString();
+                if (!cell.TryGetProperty(key, out var v)) continue;
+                if (v.ValueKind == JsonValueKind.String) return v.GetString();
+                if (v.ValueKind == JsonValueKind.Number) return v.GetRawText();
+                if (v.ValueKind == JsonValueKind.Object && v.TryGetProperty("value", out var ov))
+                {
+                    if (ov.ValueKind == JsonValueKind.Number) return ov.GetRawText();
+                    if (ov.ValueKind == JsonValueKind.String) return ov.GetString();
+                }
             }
-            if (string.IsNullOrEmpty(url)) return null;
-            return await FetchImageAsync(url);
+            return null;
+        }
+
+        /// <summary>标识单元格若本身是图像单元格，其 data 为图像 URL。</summary>
+        private static string ExtractCellImageUrl(JsonElement cell)
+        {
+            if (!cell.TryGetProperty("data", out var d)) return null;
+            string url = null;
+            if (d.ValueKind == JsonValueKind.String) url = d.GetString();
+            else if (d.ValueKind == JsonValueKind.Object)
+            {
+                if (d.TryGetProperty("url", out var u)) url = u.GetString();
+                else if (d.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String) url = v.GetString();
+            }
+            return url != null && (url.StartsWith("/") || url.StartsWith("http") || url.StartsWith("data:")) ? url : null;
         }
 
         private async Task<Bitmap> DecodeMainImageAsync(JsonElement hmiResult)
@@ -325,18 +343,7 @@ namespace CameraViewer
                 if (type != "ImageLayer") continue;
                 var url = layer.TryGetProperty("url", out var u) ? u.GetString() : null;
                 if (!string.IsNullOrEmpty(url))
-                {
-                    // Get image size for ?sz= scaling
-                    int? w = null, h = null;
-                    if (layer.TryGetProperty("image", out var imgObj) && imgObj.ValueKind == JsonValueKind.Object)
-                    {
-                        if (imgObj.TryGetProperty("width", out var wEl)) w = wEl.GetInt32();
-                        if (imgObj.TryGetProperty("height", out var hEl)) h = hEl.GetInt32();
-                    }
-                    if (w.HasValue && w.Value > 640 && h.HasValue)
-                        url = $"{url}{(url.Contains('?') ? '&' : '?')}sz=640,{(int)(h.Value * 640.0 / w.Value)}";
-                    return await FetchImageAsync(url);
-                }
+                    return await FetchImageAsync(url);   // 原图，不做 ?sz= 缩放
             }
             return null;
         }
