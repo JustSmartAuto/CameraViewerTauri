@@ -40,6 +40,11 @@ namespace CameraViewerDotnet
             [9] = (3, 3),
             [12] = (4, 3),
             [16] = (4, 4),
+            [20] = (5, 4),
+            [24] = (6, 4),
+            [25] = (5, 5),
+            [30] = (6, 5),
+            [36] = (6, 6),
         };
 
         public static Icon LoadAppIcon()

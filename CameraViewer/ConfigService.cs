@@ -77,7 +77,7 @@ namespace CameraViewer
                         var c = new CameraConfig();
                         c.count = node["count"]?.GetValue<int>() ?? 1;
                         if (c.count < 1) c.count = 1;
-                        if (c.count > 16) c.count = 16;
+                        if (c.count > 36) c.count = 36;
                         c.delay = node["delay"]?.GetValue<int>() ?? 10;
                         if (c.delay < 0) c.delay = 0;
                         foreach (var n in node["items"]?.AsArray() ?? new JsonArray())

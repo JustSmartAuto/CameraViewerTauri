@@ -114,7 +114,7 @@ namespace CameraViewerDotnet
             var countLabel = MakeLabel(I18n.T("count"));
             countRow.Controls.Add(countLabel);
             var countSelect = new AntdUI.Select { Width = 120, Height = 30 };
-            var counts = new[] { 1, 2, 4, 6, 9, 12, 16 };
+            var counts = new[] { 1, 2, 4, 6, 9, 12, 16, 20, 24, 25, 30, 36 };
             foreach (var n in counts) countSelect.Items.Add(n);
             countSelect.SelectedIndex = Array.IndexOf(counts, ConfigService.Camera.count);
             countSelect.SelectedIndexChanged += (s, e) =>
