@@ -33,6 +33,7 @@ namespace CameraViewer
             ["restore"] = new[] { "还原", "Restore" },
             ["themeLight"] = new[] { "明亮", "Light" },
             ["themeDark"] = new[] { "暗黑", "Dark" },
+            ["themeBeos"] = new[] { "BeOS", "BeOS" },
             ["themeSetting"] = new[] { "界面主题", "Theme" },
             ["languageSetting"] = new[] { "界面语言", "Language" },
             ["languageZh"] = new[] { "中文", "中文" },

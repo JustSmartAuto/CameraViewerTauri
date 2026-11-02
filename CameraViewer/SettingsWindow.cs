@@ -236,18 +236,22 @@ namespace CameraViewerDotnet
             var themeLabel = MakeLabel(I18n.T("themeSetting"), true);
             panel.Controls.Add(themeLabel);
 
-            var dark = new AntdUI.Radio { Text = I18n.T("themeDark"), Checked = ThemeManager.Theme == "dark", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 8, 0, 4) };
-            dark.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("dark"); };
-            var light = new AntdUI.Radio { Text = I18n.T("themeLight"), Checked = ThemeManager.Theme != "dark", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 0, 0, 4) };
+            var light = new AntdUI.Radio { Text = I18n.T("themeLight"), Checked = ThemeManager.Theme == "light", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 8, 0, 4) };
             light.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("light"); };
+            var dark = new AntdUI.Radio { Text = I18n.T("themeDark"), Checked = ThemeManager.Theme == "dark", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 0, 0, 4) };
+            dark.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("dark"); };
+            var beos = new AntdUI.Radio { Text = I18n.T("themeBeos"), Checked = ThemeManager.Theme == "beos", AutoSizeMode = TAutoSize.Auto, Margin = new Padding(0, 0, 0, 4) };
+            beos.CheckedChanged += (s, e) => { if (e.Value) ApplyThemeChoice("beos"); };
 
-            panel.Controls.Add(dark);
             panel.Controls.Add(light);
+            panel.Controls.Add(dark);
+            panel.Controls.Add(beos);
             langUpdaters.Add(() =>
             {
                 themeLabel.Text = I18n.T("themeSetting");
-                dark.Text = I18n.T("themeDark");
                 light.Text = I18n.T("themeLight");
+                dark.Text = I18n.T("themeDark");
+                beos.Text = I18n.T("themeBeos");
             });
             return panel;
         }

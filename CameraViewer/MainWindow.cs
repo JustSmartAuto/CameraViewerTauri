@@ -16,15 +16,20 @@ namespace CameraViewerDotnet
         private readonly TableLayoutPanel grid;
         private readonly Panel center;
         private readonly Panel maxHost;
-        private readonly Panel toolbar;
+        private readonly AntdUI.Menu menuBar;
+        private readonly AntdUI.MenuItem miSettings;
+        private readonly AntdUI.MenuItem miTheme;
+        private readonly AntdUI.MenuItem miThemeLight;
+        private readonly AntdUI.MenuItem miThemeDark;
+        private readonly AntdUI.MenuItem miThemeBeos;
+        private readonly AntdUI.MenuItem miLang;
+        private readonly AntdUI.MenuItem miLangZh;
+        private readonly AntdUI.MenuItem miLangEn;
+        private readonly AntdUI.MenuItem miAbout;
         private readonly Panel status;
         private readonly AntdUI.PageHeader header;
         private readonly Label timeText;
         private readonly Label versionText;
-        private readonly AntdUI.Button settingsBtn;
-        private readonly AntdUI.Button themeBtn;
-        private readonly AntdUI.Button langBtn;
-        private readonly AntdUI.Button aboutBtn;
         private readonly NotifyIcon notifyIcon;
         private readonly System.Windows.Forms.Timer timer;
         private readonly List<CameraCell> cells = new List<CameraCell>();
@@ -73,51 +78,68 @@ namespace CameraViewerDotnet
                 BackColor = ThemeManager.Bg2,
             };
 
-            // 工具栏
-            toolbar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = ThemeManager.Bg2 };
-            toolbar.Paint += (s, e) =>
+            // 菜单栏（水平模式）
+            menuBar = new AntdUI.Menu
             {
-                using var pen = new Pen(ThemeManager.Border);
-                e.Graphics.DrawLine(pen, 0, toolbar.Height - 1, toolbar.Width - 1, toolbar.Height - 1);
-            };
-            var btns = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Right,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = Color.Transparent,
+                Dock = DockStyle.Top,
+                Height = 36,
+                Mode = TMenuMode.Horizontal,
+                BackColor = ThemeManager.Bg2,
+                ColorScheme = ThemeManager.TAMode,
+                Radius = 4,
             };
 
-            settingsBtn = MakeButton(92);
-            settingsBtn.Click += (s, e) => new SettingsWindow().ShowDialog(this);
-            btns.Controls.Add(settingsBtn);
+            miSettings = new AntdUI.MenuItem(I18n.T("setting"), AntIcon.Svg(AntIcon.Setting));
+            miSettings.ID = "settings";
 
-            themeBtn = MakeButton(92);
-            themeBtn.Click += (s, e) =>
+            miThemeLight = new AntdUI.MenuItem(I18n.T("themeLight")) { ID = "themeLight" };
+            miThemeDark  = new AntdUI.MenuItem(I18n.T("themeDark"))  { ID = "themeDark" };
+            miThemeBeos  = new AntdUI.MenuItem(I18n.T("themeBeos"))  { ID = "themeBeos" };
+            miTheme = new AntdUI.MenuItem(I18n.T("themeSetting"), AntIcon.Svg(AntIcon.Sun));
+            miTheme.Sub.AddRange(new[] { miThemeLight, miThemeDark, miThemeBeos });
+
+            miLangZh = new AntdUI.MenuItem("中文") { ID = "langZh" };
+            miLangEn = new AntdUI.MenuItem("English") { ID = "langEn" };
+            miLang = new AntdUI.MenuItem(I18n.T("languageSetting"), AntIcon.Svg(AntIcon.Global));
+            miLang.Sub.AddRange(new[] { miLangZh, miLangEn });
+
+            miAbout = new AntdUI.MenuItem(I18n.T("about"), AntIcon.Svg(AntIcon.InfoCircle));
+            miAbout.ID = "about";
+
+            menuBar.Items.AddRange(new[] { miSettings, miTheme, miLang, miAbout });
+            menuBar.ItemClick += (s, e) =>
             {
-                var next = ThemeManager.Theme == "dark" ? "light" : "dark";
-                ThemeManager.Apply(next);
-                ConfigService.App.theme = next;
-                ConfigService.SaveApp();
+                var id = e.Item.ID;
+                switch (id)
+                {
+                    case "settings":
+                        new SettingsWindow().ShowDialog(this);
+                        break;
+                    case "themeLight":
+                        ThemeManager.Apply("light");
+                        ConfigService.App.theme = "light"; ConfigService.SaveApp();
+                        break;
+                    case "themeDark":
+                        ThemeManager.Apply("dark");
+                        ConfigService.App.theme = "dark"; ConfigService.SaveApp();
+                        break;
+                    case "themeBeos":
+                        ThemeManager.Apply("beos");
+                        ConfigService.App.theme = "beos"; ConfigService.SaveApp();
+                        break;
+                    case "langZh":
+                        I18n.SetLanguage("zh");
+                        ConfigService.App.language = "zh"; ConfigService.SaveApp();
+                        break;
+                    case "langEn":
+                        I18n.SetLanguage("en");
+                        ConfigService.App.language = "en"; ConfigService.SaveApp();
+                        break;
+                    case "about":
+                        new AboutWindow().ShowDialog(this);
+                        break;
+                }
             };
-            btns.Controls.Add(themeBtn);
-
-            langBtn = MakeButton(92);
-            langBtn.Click += (s, e) =>
-            {
-                I18n.SetLanguage(I18n.Language == "en" ? "zh" : "en");
-                ConfigService.App.language = I18n.Language;
-                ConfigService.SaveApp();
-            };
-            btns.Controls.Add(langBtn);
-
-            aboutBtn = MakeButton(92);
-            aboutBtn.Click += (s, e) => new AboutWindow().ShowDialog(this);
-            btns.Controls.Add(aboutBtn);
-
-            toolbar.Controls.Add(btns);
 
             // 中部：相机网格 + 最大化宿主
             center = new Panel { Dock = DockStyle.Fill, BackColor = ThemeManager.Bg };
@@ -157,9 +179,9 @@ namespace CameraViewerDotnet
             st.Controls.Add(versionText, 1, 0);
             status.Controls.Add(st);
 
-            // Dock 顺序：后加入的先布局（header 最顶，toolbar 其下，status 底部，center 填充剩余）
+            // Dock 顺序：后加入的先布局（header 最顶，menuBar 其下，status 底部，center 填充剩余）
             Controls.Add(center);
-            Controls.Add(toolbar);
+            Controls.Add(menuBar);
             Controls.Add(status);
             Controls.Add(header);
 
@@ -208,31 +230,23 @@ namespace CameraViewerDotnet
             I18n.LanguageChanged += OnLanguageChanged;
             ThemeManager.ThemeChanged += ApplyTheme;
 
-            UpdateToolbarButtons();
+            UpdateMenuItems();
             ApplyTheme();
             RebuildGrid();
         }
 
-        private static AntdUI.Button MakeButton(int width) => new AntdUI.Button
+        private void UpdateMenuItems()
         {
-            Width = width,
-            Height = 30,
-            Margin = new Padding(4, 9, 0, 0),
-            Type = TTypeMini.Default,
-            DefaultBorderColor = ThemeManager.BtnBorder,
-            BorderWidth = 1,
-        };
-
-        private void UpdateToolbarButtons()
-        {
-            settingsBtn.Text = I18n.T("setting");
-            settingsBtn.IconSvg = AntIcon.Svg(AntIcon.Setting);
-            themeBtn.Text = ThemeManager.Theme == "dark" ? I18n.T("themeLight") : I18n.T("themeDark");
-            themeBtn.IconSvg = AntIcon.Svg(ThemeManager.Theme == "dark" ? AntIcon.Sun : AntIcon.Moon);
-            langBtn.Text = I18n.Language == "en" ? I18n.T("languageZh") : I18n.T("languageEn");
-            langBtn.IconSvg = AntIcon.Svg(AntIcon.Global);
-            aboutBtn.Text = I18n.T("about");
-            aboutBtn.IconSvg = AntIcon.Svg(AntIcon.InfoCircle);
+            miSettings.Text = I18n.T("setting");
+            miTheme.Text = I18n.T("themeSetting");
+            miThemeLight.Text = I18n.T("themeLight");
+            miThemeDark.Text = I18n.T("themeDark");
+            miThemeBeos.Text = I18n.T("themeBeos");
+            miLang.Text = I18n.T("languageSetting");
+            miLangZh.Text = "中文";
+            miLangEn.Text = "English";
+            miAbout.Text = I18n.T("about");
+            menuBar.Invalidate();
         }
 
         private void UpdateTime() =>
@@ -243,7 +257,7 @@ namespace CameraViewerDotnet
             Text = I18n.T("appTitle");
             header.Text = I18n.T("appTitle");
             notifyIcon.Text = I18n.T("appTitle");
-            UpdateToolbarButtons();
+            UpdateMenuItems();
             UpdateTime();
         }
 
@@ -251,7 +265,8 @@ namespace CameraViewerDotnet
         {
             Mode = ThemeManager.TAMode;
             header.BackColor = ThemeManager.Bg2;
-            toolbar.BackColor = ThemeManager.Bg2;
+            menuBar.BackColor = ThemeManager.Bg2;
+            menuBar.ColorScheme = ThemeManager.TAMode;
             status.BackColor = ThemeManager.Bg2;
             center.BackColor = ThemeManager.Bg;
             grid.BackColor = ThemeManager.Bg;
@@ -259,7 +274,7 @@ namespace CameraViewerDotnet
             timeText.ForeColor = ThemeManager.FgDim;
             versionText.ForeColor = ThemeManager.FgDim;
             foreach (var c in cells) c.ApplyTheme();
-            toolbar.Invalidate();
+            menuBar.Invalidate();
             status.Invalidate();
         }
 
