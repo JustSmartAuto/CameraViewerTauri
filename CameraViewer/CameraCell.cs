@@ -219,13 +219,12 @@ namespace CameraViewerDotnet
             if (string.IsNullOrWhiteSpace(item.ip)) return;
             try
             {
-                _cogCam = CogSocketManager.GetOrCreate(item.ip);
+                _cogCam = new CogSocketCamera(item.ip);
                 _cogCam.CellResultUpdated += OnCellResultUpdated;
                 _cogCam.MainFrameUpdated += OnMainFrameUpdated;
-                await _cogCam.ConnectAsync();
-                await _cogCam.SubscribeCells(_cellNames);
+                await _cogCam.ConnectAsync(_cellNames);
             }
-            catch { /* connection failure — PictureBoxes stay empty until retry */ }
+            catch { _cogCam?.Dispose(); _cogCam = null; }
         }
 
         private void OnCellResultUpdated(string cellName)
@@ -410,7 +409,12 @@ namespace CameraViewerDotnet
             {
                 ClearAllSubGrids();
                 // Re-init cog socket connection
-                try { await CogSocketManager.ReleaseAsync(ConfigService.EnsureItem(_id).ip); } catch { }
+                if (_cogCam != null)
+                {
+                    try { _cogCam.CloseAsync().Wait(TimeSpan.FromSeconds(3)); } catch { }
+                    _cogCam.Dispose();
+                    _cogCam = null;
+                }
                 await InitCogSocketAsync();
                 return;
             }
@@ -439,7 +443,8 @@ namespace CameraViewerDotnet
                 {
                     _cogCam.CellResultUpdated -= OnCellResultUpdated;
                     _cogCam.MainFrameUpdated -= OnMainFrameUpdated;
-                    try { CogSocketManager.ReleaseAsync(ConfigService.EnsureItem(_id).ip).Wait(TimeSpan.FromSeconds(3)); } catch { }
+                    try { _cogCam.CloseAsync().Wait(TimeSpan.FromSeconds(3)); } catch { }
+                    _cogCam.Dispose();
                     _cogCam = null;
                 }
                 // Dispose any PictureBox images
