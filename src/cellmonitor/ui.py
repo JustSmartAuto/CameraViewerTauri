@@ -276,6 +276,11 @@ class MonitorApp:
         messagebox.showinfo("关于", text)
 
     def _rebuild_grid(self) -> None:
+        # 重建前快照各相机的连接状态与最新值，避免编辑配置后其他相机误显示为离线
+        saved: dict[str, tuple[str, dict[str, str]]] = {}
+        for name, panel in self.panels.items():
+            values = {cell: tip.text for cell, tip in panel._value_tips.items() if tip.text}
+            saved[name] = (panel.status, values)
         for child in self.grid_frame.winfo_children():
             child.destroy()
         self.panels.clear()
@@ -285,6 +290,13 @@ class MonitorApp:
             panel = CameraPanel(self.grid_frame, self, cfg)
             panel.grid(row=i // cols, column=i % cols, sticky="nsew", padx=5, pady=5)
             self.panels[cfg.name] = panel
+            if cfg.name in saved:
+                status, values = saved[cfg.name]
+                if status != "offline":
+                    panel.set_status(status)
+                for cell, text in values.items():
+                    if cell in panel.value_labels:
+                        panel.set_value(cell, text)
         for c in range(cols):
             self.grid_frame.columnconfigure(c, weight=1, uniform="camcol")
         self.grid_canvas.yview_moveto(0)
