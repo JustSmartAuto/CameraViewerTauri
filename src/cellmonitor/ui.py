@@ -383,7 +383,7 @@ class MonitorApp:
                                        initialvalue=80, parent=self.root)
         if not port:
             return
-        cells = self._ask_cells()
+        cells = self._ask_cells() or []  # 取消视为暂不配置单元格，可后续再编辑
         cfg = CameraConfig(name=name, host=host, port=port, cells=cells)
         self.cameras.append(cfg)
         save_config(self.data_dir, self.cameras)
@@ -405,16 +405,19 @@ class MonitorApp:
         self.edit_camera_cells(cfg)
 
     def edit_camera_cells(self, cfg: CameraConfig) -> None:
-        """直接打开指定相机的单元格编辑器并保存。"""
-        cfg.cells = self._ask_cells(cfg.cells)
+        """直接打开指定相机的单元格编辑器并保存；取消则不改动现有配置。"""
+        cells = self._ask_cells(cfg.cells)
+        if cells is None:
+            return
+        cfg.cells = cells
         save_config(self.data_dir, self.cameras)
         self._rebuild_grid()
 
-    def _ask_cells(self, current: list[CellConfig] | None = None) -> list[CellConfig]:
-        """打开交互式单元格编辑器（表格 + 表单），可回退到文本编辑。"""
+    def _ask_cells(self, current: list[CellConfig] | None = None) -> list[CellConfig] | None:
+        """打开交互式单元格编辑器（表格 + 表单），可回退到文本编辑。取消返回 None。"""
         cells = [CellConfig(**c.__dict__) for c in (current or [])]
         dlg = CellEditorDialog(self.root, cells)
-        return dlg.result or []
+        return dlg.result
 
     # ---------- 图表 / 导出 ----------
 
