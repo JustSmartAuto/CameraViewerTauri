@@ -1,7 +1,19 @@
+# OPT SciCamera SDK — 体积大，随安装包部署，仓库只保留 .gitignore/README
+opt-camera-sdk/Runtime/
+opt-camera-sdk/Samples_CSharp.zip
+opt-camera-sdk/*.dll
+opt-camera-sdk/*.xml
+
+# 构建产物
 bin/
 obj/
 dist/
-publish/
+
+# 系统文件
+.DS_Store
+Thumbs.db
 *.user
-.vs/
-*kimi*.md
+*.suo
+
+# 临时备份
+.backup-before-filter/
