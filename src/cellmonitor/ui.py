@@ -150,6 +150,7 @@ class CameraPanel(tk.Frame):
         theme.beos_button(btns, "断开", lambda: self.app.disconnect_camera(cfg.name)).pack(side="left", padx=3)
         theme.beos_button(btns, "趋势图", lambda: self.app.show_chart(cfg)).pack(side="left", padx=3)
         theme.beos_button(btns, "导出xlsx", lambda: self.app.export_camera(cfg)).pack(side="left", padx=3)
+        theme.beos_button(btns, "编辑", lambda: self.app.edit_camera_cells(cfg)).pack(side="left", padx=3)
 
     def set_status(self, status: str, detail: str = "") -> None:
         self.status = status
@@ -401,6 +402,10 @@ class MonitorApp:
         if not cfg:
             messagebox.showerror("错误", f"未找到相机 {name}")
             return
+        self.edit_camera_cells(cfg)
+
+    def edit_camera_cells(self, cfg: CameraConfig) -> None:
+        """直接打开指定相机的单元格编辑器并保存。"""
         cfg.cells = self._ask_cells(cfg.cells)
         save_config(self.data_dir, self.cameras)
         self._rebuild_grid()
@@ -615,9 +620,9 @@ def _text_to_cells(text: str) -> list[CellConfig]:
             data_type = parts[1] if len(parts) > 1 and parts[1] else "auto"
             if data_type not in CELL_DATA_TYPES:
                 data_type = "auto"
-            record_mode = parts[2] if len(parts) > 2 and parts[2] else "advanced"
+            record_mode = parts[2] if len(parts) > 2 and parts[2] else "simple"
             if record_mode not in CELL_RECORD_MODES:
-                record_mode = "advanced"
+                record_mode = "simple"
             mode = parts[3] if len(parts) > 3 and parts[3] else "event"
             if mode not in ("event", "poll"):
                 mode = "event"
@@ -643,7 +648,7 @@ class CellFormDialog(tk.Toplevel):
         self.configure(bg=C["chrome"])
         theme.title_tab(self, "单元格设置")
 
-        cell = cell or CellConfig(name="")
+        cell = cell or CellConfig(name="", record_mode="simple")  # 新增单元格默认 simple 仅记录
         self._cell = CellConfig(**cell.__dict__)
 
         body = tk.Frame(self, bg=C["chrome"])
