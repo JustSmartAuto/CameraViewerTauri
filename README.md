@@ -6,7 +6,7 @@
 
 ![CameraViewerDotnet 主界面](assets/screenshot1.png)
 
-主界面：多路相机网格布局（最大 36 格），Http/GigE 内嵌 WebView2 加载工业相机 HMI 网页，CogSocket 相机按 `cellSubscribe` 配置拆成 PictureBox 子网格显示渲染图；顶部 PageHeader + AntdUI.Menu 水平菜单（设置/主题/语言/关于）；底部状态栏显示系统时间与版本号。
+主界面：多路相机网格布局（最大 36 格），Http/GigE 内嵌 WebView2 加载工业相机 HMI 网页，CogSocket 相机按 `identifierCell` + `cellBindings` 绑定拆成 PictureBox 子网格显示拍照原图；顶部 PageHeader + AntdUI.Menu 水平菜单（设置/主题/语言/关于）；底部状态栏显示系统时间与版本号。
 
 ## 功能
 
@@ -15,15 +15,19 @@
 | 方式 | 说明 | 渲染 |
 |---|---|---|
 | **Http** | 康耐视 In-Sight、海康等 HTTP HMI 网页相机 | WebView2 内嵌加载 HMI 页面 |
-| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 默认 WebView2；**配置 `subGridCount > 1` + `cellSubscribe` 逗号分隔单元格名** → 自动切 PictureBox 子网格模式，每个格子显示对应条件号的渲染图 |
-| **GigE** | 海康、Basler、OPT SciCamera SDK 原生 GigE Vision 相机 | WebView2（通过 SDK 内嵌 HMI 页面） |
+| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 默认 WebView2；**配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）** → 自动切 PictureBox 子网格模式，每次拍照按标识取值把原图填到对应槽位 |
+| **GigE** | GigE Vision 相机（仅保存序列号 / 曝光配置） | 原生取流未接入；设置页不提供 URL 输入，单元格暂无画面（若沿用旧配置的 `ip` 则按 WebView2 加载） |
 
 ### CogSocket 子网格拆分（多面产品场景）
 
 - 相机设置里选 `conn = CogSocket`，输入 IP:Port
-- **`cellSubscribe`**：逗号分隔要显示的拍照标识单元格名，如 `cellResultA,cellResultB,cellResultC,cellResultD`
+- **`identifierCell`**：拍照标识单元格地址（如 `A21`），其取值 `11` / `21` / `31` / `41` 分别表示第 1~4 次拍照
 - **`subGridCount`**：下拉选择 `[1, 2, 4, 6, 8]`（对应 1×1 / 2×1 / 2×2 / 3×2 / 4×2 布局）
-- 每个格子左上角显示对应 cell 名；**新拍照时自动清空所有子网格**（防止新旧产品图片混淆），然后逐个 cell 结果到达填上新产品的条件号图
+- **`cellBindings`**：每个槽位填一个标识取值，值到达即把该次拍照的**原图**填入对应槽位；槽位号与子网格位置一一对应
+- 每个槽位左上角显示绑定的标识取值（未绑定时显示 `#槽位号`）
+- 仅当 `conn=cogsocket`、`subGridCount>1`、`identifierCell` 非空且至少有一个绑定值时才会切子网格模式，否则回退 WebView2
+- 最小槽位对应的取值到达时视为新一轮产品，**先清空所有子网格**，避免新旧产品图片混淆
+- 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
 
 ### 网格布局
@@ -37,7 +41,7 @@
 | 标签 | 说明 |
 |---|---|
 | **相机显示** | 相机数量、错峰延时 |
-| **相机设置** | 每路卡片：连接方式下拉、URL/序列号/曝光、CogSocket cellSubscribe + subGridCount、备注、锁定 |
+| **相机设置** | 每路卡片：连接方式下拉、URL（Http/CogSocket）或序列号/曝光（GigE）、CogSocket 拍照标识单元格 + subGridCount + 各槽位取值绑定、备注、锁定 |
 | **显示设置** | 明亮 / 暗黑 / **BeOS teal chrome** 三种 AntdUI 主题 |
 | **软件设置** | 中文 / English，**配置目录切换**（`bootstrap.json` 多开支持） |
 | **文件中转** | 复刻 CameraHelperLens：TransformConfig + 完整 DataGridView 部件编辑器（文件夹部件 / 文件名部件，`AntdUI.Collapse` 可折叠）；文件写入稳定等待；FileSystemWatcher 监听；可选立即处理一次 |
@@ -69,13 +73,15 @@
 WebSocket 握手  ws://host:8087/ws
   ↓ post @/hello (optional, old firmware may reject — non-fatal)
   ↓ detect root: GET cam0/hmi/info → fallback system/info
-  ↓ POST {root}/openSession  body={"$type":"HmiSessionInfo","cellNames":[...]}  → 得到 sid
+  ↓ POST {root}/openSession  body={"$type":"HmiSessionInfo","cellNames":[identifierCell]}  → 得到 sid
   ↓ POST {sid}/login  ["admin","",false]  (non-fatal)
   ↓ listen {sid}/resultChanged  ← 一个事件返回完整 HmiResult.cells[]
   ↓ POST {sid}/ready  ← 触发相机推第一帧
   ↓ keepAlive loop 每 15s 发 POST {sid}/keepAlive
-  ↓ 收 event → HmiResult.cells[].data 给 URL → HTTP GET http://host:port{url}?sz=640,h
-  ↓ 解码 Bitmap → PictureBox.Image (BeginInvoke 切 UI 线程)
+  ↓ 收 event → 从 cells[] 找 identifierCell 的取值（11/21/31/41…）
+  ↓           → 取图像地址（标识单元格 data / acqImageView.layers[].url / data: base64）
+  ↓           → HTTP GET 原图（不带 sz 参数，不做缩放）
+  ↓ 解码 Bitmap → 按取值绑定的槽位填入 PictureBox.Image (BeginInvoke 切 UI 线程)
   ↓ 必须在回调末尾发 POST {sid}/ready  ← 让相机推下一帧（否则只推一帧就停）
 ```
 
@@ -122,8 +128,8 @@ CameraViewerDotnet/
 │   ├── ThemeManager.cs          # light/dark/beos 主题
 │   ├── AntIcon.cs               # AntdUI 内置 SVG 图标
 │   ├── AboutWindow.cs           # 关于页
-│   ├── CogSocketCamera.cs       # WebSocket 客户端（按 CameraCellMonitor 实测协议）
-│   ├── CogSocketException.cs    # 异常类型
+│   ├── Assets/hmi-i18n.js       # WebView2 注入的 HMI 中文化脚本（EmbeddedResource）
+│   ├── CogSocketCamera.cs       # WebSocket 客户端（按 CameraCellMonitor 实测协议，含 CogSocketException）
 │   ├── TransformPart.cs         # PartType + TransformPart 模型
 │   ├── ActionQueueWorker.cs     # Lens 复刻：串行队列消费
 │   ├── TransformAction.cs       # Lens 复刻：等稳定→拆分→Move
@@ -136,7 +142,7 @@ CameraViewerDotnet/
 │   └── SciCamera.Net.dll        # 本地手动拷贝（git ignore 大文件）
 ├── CameraViewer.Launcher/       # .NET Framework 4.8 启动器
 ├── reference/                   # CogSocket 协议参考、BeOS 主题素材、图标
-├── assets/                      # 截图、ttf 字体（ZhuqueFangsong / Smiley Sans Oblique）
+├── assets/                      # 截图、图标、内嵌的 .NET 8 运行时安装包
 ├── .gitignore                   # opt-camera-sdk/Runtime/ + publish/ + 临时备份
 └── README.md
 ```
@@ -146,6 +152,7 @@ CameraViewerDotnet/
 - **WebView2 运行时**：Http/GigE 模式依赖 WebView2；部分精简版 Win10 工控机可能缺失，首次运行需联网下载，或另行部署 WebView2 离线包
 - **启动器内嵌 .NET 8 运行时**：工控机完全离线也能完成运行时安装
 - **opt-camera-sdk/Runtime/**：SciCamera SDK 原生 DLL 体积大（约 120MB），不进 git；部署时由安装包或 `.zip` 释放到 `opt-camera-sdk/Runtime/`，`SciCamNative.Configure()` 自动定位
-- **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+），多 CameraCell 同 hostPort 时会各自开独立 WebSocket，请控制格子数量
+- **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+）；当前每个 CameraCell 各自开独立 WebSocket（无共享连接池），同 hostPort 多格时请控制格子数量
+- **GigE 现状**：原生取流尚未接入；设置页仅保存序列号与曝光，不提供 URL 输入，因此单元格暂无画面（沿用旧 `ip` 时按 WebView2 加载）
 - **In-Sight IP 端口**：固件 6.x+ 默认 8087，22.2+ 固定 80
 - **ready 握手**：CogSocket 模式下必须在 `resultChanged` 事件回调末尾发 `POST {sid}/ready`，否则相机只推一帧就停（CameraCellMonitor 实测）
