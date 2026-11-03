@@ -47,7 +47,7 @@ namespace CameraViewer
         private readonly ConcurrentDictionary<string, string> _lastImageByCell = new();
 
         /// <summary>一次拍照完成：标识单元格名 + 取值 + 图像 + 是否原图。先发 640 缩略图，原图取到后再补发一次。</summary>
-        public event Action<string, string, Bitmap, bool> CellResult;
+        public event Action<string, string, Bitmap, bool, string, int, int> CellResult;
 
         public string IpPort { get; }
         public bool IsConnected => _ws?.State == WebSocketState.Open;
@@ -326,10 +326,13 @@ namespace CameraViewer
             }
 
             var main = GetMainImage(hmiResult);
+            // 叠加图使用主视图的 SVGLayer（坐标即图像像素坐标），文本很小，随本次拍照一起取回
+            var svgUrl = GetMainSvg(hmiResult);
 
             // 2. Fire-and-forget：先取 640 缩略图尽快落图，原图在后台补取（失败则保留缩略图）
             _ = Task.Run(async () =>
             {
+                var svg = await FetchSvgAsync(svgUrl);
                 var originals = new List<(string Cell, string Value, string Url)>();
                 try
                 {
@@ -349,7 +352,7 @@ namespace CameraViewer
                             bmp = await FetchImageAsync(ThumbnailUrl(url, main.Width, main.Height));
                         if (bmp == null) bmp = await FetchImageAsync(url);   // 缩略图失败时退回原图
 
-                        if (bmp != null) Dispatch(m.Cell, m.Value, bmp, false);
+                        if (bmp != null) Dispatch(m.Cell, m.Value, bmp, false, svg, main.Width, main.Height);
                         if (!url.StartsWith("data:")) originals.Add((m.Cell, m.Value, url));
                     }
                 }
@@ -364,7 +367,7 @@ namespace CameraViewer
                 {
                     Bitmap bmp = null;
                     try { bmp = await FetchImageAsync(o.Url); } catch { }
-                    if (bmp != null) Dispatch(o.Cell, o.Value, bmp, true);
+                    if (bmp != null) Dispatch(o.Cell, o.Value, bmp, true, svg, main.Width, main.Height);
                 }
             });
         }
@@ -376,11 +379,11 @@ namespace CameraViewer
         }
 
         /// <summary>交付图像给订阅者；位图所有权随回调转移，isOriginal 表示这是后台补取的原图。</summary>
-        private void Dispatch(string cell, string value, Bitmap bmp, bool isOriginal)
+        private void Dispatch(string cell, string value, Bitmap bmp, bool isOriginal, string svg, int srcWidth, int srcHeight)
         {
             var handler = CellResult;
             if (handler == null) { bmp.Dispose(); return; }
-            try { handler(cell, value, bmp, isOriginal); }
+            try { handler(cell, value, bmp, isOriginal, svg, srcWidth, srcHeight); }
             catch { bmp.Dispose(); }
         }
 
@@ -444,6 +447,35 @@ namespace CameraViewer
                 return (url, w, h);
             }
             return (null, 0, 0);
+        }
+
+        /// <summary>取主采集视图的 SVGLayer 地址；其坐标系与采集图像像素坐标一致。</summary>
+        private static string GetMainSvg(JsonElement hmiResult)
+        {
+            if (!hmiResult.TryGetProperty("acqImageView", out var acq)) return null;
+            if (!acq.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array) return null;
+            foreach (var layer in layers.EnumerateArray())
+            {
+                var type = layer.TryGetProperty("$type", out var t) ? t.GetString() : null;
+                if (type != "SVGLayer") continue;
+                var url = layer.TryGetProperty("url", out var u) ? u.GetString() : null;
+                if (!string.IsNullOrEmpty(url)) return url;
+            }
+            return null;
+        }
+
+        /// <summary>获取叠加图形 SVG 文本；失败返回空串（叠加图保留上一次或只显示产品图）。</summary>
+        private async Task<string> FetchSvgAsync(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return "";
+            try
+            {
+                if (!url.StartsWith("http")) url = $"http://{_host}:{_port}{url}";
+                var resp = await _http.GetAsync(url);
+                resp.EnsureSuccessStatusCode();
+                return await resp.Content.ReadAsStringAsync();
+            }
+            catch { return ""; }
         }
 
         private async Task<Bitmap> FetchImageAsync(string url)

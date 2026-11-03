@@ -18,6 +18,8 @@ namespace CameraViewerDotnet
         private readonly AntdUI.Button _lockBtn;
         private readonly AntdUI.Button _refreshBtn;
         private readonly AntdUI.Button _maxBtn;
+        private readonly AntdUI.Button _productBtn;   // 产品图：仅显示采集图像
+        private readonly AntdUI.Button _overlayBtn;   // 叠加图：图像 + 相机 SVGLayer
         private readonly Panel _top;
 
         // WebView2 path: http / gige / cogsocket-subGrid==1
@@ -37,6 +39,14 @@ namespace CameraViewerDotnet
         private Panel _placeholderHost;
         private System.Windows.Forms.Label _placeholderLabel;
         private CogSocketSubscription _cogSub;   // 共享连接订阅（同一相机多 Cell 复用一条 WebSocket）
+
+        // 叠加图：每个子网格槽位一个 WebView2，渲染图像 + SVG（与 HTTP 模式同源渲染行为）
+        private readonly Dictionary<int, Microsoft.Web.WebView2.WinForms.WebView2> _slotWebViews = new Dictionary<int, Microsoft.Web.WebView2.WinForms.WebView2>();
+        private readonly HashSet<int> _slotWebViewReady = new HashSet<int>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _slotDataUrl = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _slotSvg = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (int W, int H)> _slotSrcSize = new System.Collections.Concurrent.ConcurrentDictionary<int, (int W, int H)>();
+        private volatile bool _overlayMode;
 
         private bool _isMaximized;
         private static string _hmiI18nScript;
@@ -69,12 +79,11 @@ namespace CameraViewerDotnet
 
             // ---------- Top bar ----------
             _top = new Panel { Dock = DockStyle.Fill, Height = 30, BackColor = ThemeManager.Bg2 };
-            var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
+            int btnCols = _useSubGrid ? 5 : 3;   // 产品图/叠加图 + 锁/刷新/最大化
+            var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 + btnCols, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            for (int i = 0; i < btnCols; i++) topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             _urlBox = new AntdUI.Input
             {
@@ -103,13 +112,25 @@ namespace CameraViewerDotnet
             };
             topGrid.Controls.Add(_remarkBox, 1, 0);
 
+            int col = 2;
+            if (_useSubGrid)
+            {
+                _productBtn = new AntdUI.Button { Text = I18n.T("productImage"), Width = 64, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _productBtn.Click += (s, e) => SetOverlayMode(false);
+                topGrid.Controls.Add(_productBtn, col++, 0);
+
+                _overlayBtn = new AntdUI.Button { Text = I18n.T("overlayImage"), Width = 64, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _overlayBtn.Click += (s, e) => SetOverlayMode(true);
+                topGrid.Controls.Add(_overlayBtn, col++, 0);
+            }
+
             _lockBtn = new AntdUI.Button { Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             _lockBtn.Click += (s, e) => ToggleLock();
-            topGrid.Controls.Add(_lockBtn, 2, 0);
+            topGrid.Controls.Add(_lockBtn, col++, 0);
 
             _refreshBtn = new AntdUI.Button { Text = I18n.T("refresh"), IconSvg = AntIcon.Svg(AntIcon.Reload), Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             _refreshBtn.Click += async (s, e) => await ReloadAsync();
-            topGrid.Controls.Add(_refreshBtn, 3, 0);
+            topGrid.Controls.Add(_refreshBtn, col++, 0);
 
             _maxBtn = new AntdUI.Button { Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
             _maxBtn.Click += (s, e) =>
@@ -118,9 +139,10 @@ namespace CameraViewerDotnet
                 UpdateMaxBtn();
                 ToggleMaximize?.Invoke(this);
             };
-            topGrid.Controls.Add(_maxBtn, 4, 0);
+            topGrid.Controls.Add(_maxBtn, col, 0);
             UpdateLockBtn();
             UpdateMaxBtn();
+            UpdateViewButtons();
 
             _top.Controls.Add(topGrid);
 
@@ -279,7 +301,7 @@ namespace CameraViewerDotnet
         }
 
         /// <summary>拍照完成回调（后台线程）：标识取值 → 绑定槽位 → 显示图像。先缩略图，原图到达后替换。</summary>
-        private void OnSubGridResult(string value, Bitmap bmp, bool isOriginal)
+        private void OnSubGridResult(string value, Bitmap bmp, bool isOriginal, string svg, int srcWidth, int srcHeight)
         {
             int slot;
             if (!_useSubGrid || IsDisposed || bmp == null ||
@@ -289,18 +311,24 @@ namespace CameraViewerDotnet
                 return;
             }
 
+            // 保存本次拍照的叠加图形与原始像素尺寸；叠加模式开启时同时把图像编码为 data URL 供 WebView2 渲染
+            _slotSvg[slot] = svg ?? "";
+            if (srcWidth > 0 && srcHeight > 0) _slotSrcSize[slot] = (srcWidth, srcHeight);
+            string dataUrl = null;
+            if (_overlayMode) dataUrl = ToDataUrl(bmp);
+
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action(() => ApplySubGridImage(slot, bmp, isOriginal))); }
+                try { BeginInvoke(new Action(() => ApplySubGridImage(slot, bmp, isOriginal, dataUrl))); }
                 catch { bmp.Dispose(); }
             }
             else
             {
-                ApplySubGridImage(slot, bmp, isOriginal);
+                ApplySubGridImage(slot, bmp, isOriginal, dataUrl);
             }
         }
 
-        private void ApplySubGridImage(int slot, Bitmap bmp, bool isOriginal)
+        private void ApplySubGridImage(int slot, Bitmap bmp, bool isOriginal, string dataUrl)
         {
             var pb = _slotBoxes[slot];
             if (IsDisposed || pb.IsDisposed) { bmp?.Dispose(); return; }
@@ -310,6 +338,12 @@ namespace CameraViewerDotnet
             var old = pb.Image;
             pb.Image = bmp;
             old?.Dispose();
+
+            if (dataUrl != null)
+            {
+                _slotDataUrl[slot] = dataUrl;
+                PostOverlay(slot);
+            }
         }
 
         private void ClearAllSubGrids()
@@ -324,6 +358,176 @@ namespace CameraViewerDotnet
                     old?.Dispose();
                 }
             }
+            ClearOverlays();
+        }
+
+        // ==================== Overlay (SVG) ====================
+
+        /// <summary>切换产品图 / 叠加图显示模式。</summary>
+        private void SetOverlayMode(bool overlay)
+        {
+            if (!_useSubGrid) return;
+            _overlayMode = overlay;
+            UpdateViewButtons();
+
+            if (!overlay)
+            {
+                foreach (var wv in _slotWebViews.Values) wv.Visible = false;
+                return;
+            }
+
+            EnsureOverlayWebViews();
+            foreach (var wv in _slotWebViews.Values) wv.Visible = true;
+            // 已到达的图像立即补渲染（WebView2 尚未初始化完成的会在完成后自动补发）
+            foreach (var slot in _slotBoxes.Keys)
+            {
+                if (!_slotDataUrl.ContainsKey(slot))
+                {
+                    var img = _slotBoxes[slot].Image;
+                    if (img != null) _slotDataUrl[slot] = ToDataUrl(img);
+                }
+                PostOverlay(slot);
+            }
+        }
+
+        private void UpdateViewButtons()
+        {
+            if (_productBtn == null || _overlayBtn == null) return;
+            _productBtn.Type = _overlayMode ? AntdUI.TTypeMini.Default : AntdUI.TTypeMini.Primary;
+            _overlayBtn.Type = _overlayMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
+        }
+
+        private void EnsureOverlayWebViews()
+        {
+            foreach (var kv in _slotBoxes)
+            {
+                if (_slotWebViews.ContainsKey(kv.Key)) continue;
+                var wv = new Microsoft.Web.WebView2.WinForms.WebView2
+                {
+                    Dock = DockStyle.Fill,
+                    DefaultBackgroundColor = Color.Transparent,
+                    Visible = _overlayMode,
+                };
+                _slotWebViews[kv.Key] = wv;
+                kv.Value.Controls.Add(wv);
+                wv.BringToFront();
+                _ = InitializeOverlayWebViewAsync(kv.Key, wv);
+            }
+        }
+
+        private async System.Threading.Tasks.Task InitializeOverlayWebViewAsync(int slot, Microsoft.Web.WebView2.WinForms.WebView2 wv)
+        {
+            try
+            {
+                await wv.EnsureCoreWebView2Async(null);
+                wv.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                wv.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                wv.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                wv.CoreWebView2.NavigationCompleted += (s, e) =>
+                {
+                    _slotWebViewReady.Add(slot);
+                    PostOverlay(slot);
+                };
+                wv.CoreWebView2.NavigateToString(OverlayHtml);
+            }
+            catch { }
+        }
+
+        /// <summary>把当前槽位的图像与 SVG 推给该槽位的 WebView2（像素坐标用图像原始尺寸）。</summary>
+        private void PostOverlay(int slot)
+        {
+            if (IsDisposed) return;
+            var wv = _slotWebViews.TryGetValue(slot, out var v) ? v : null;
+            if (wv == null || wv.CoreWebView2 == null || !_slotWebViewReady.Contains(slot)) return;
+            var pb = _slotBoxes.TryGetValue(slot, out var box) ? box : null;
+            // SVG 坐标对应原始采集图像；缩略图仅用于显示，不能拿缩略图尺寸当 viewBox
+            int w = 0, h = 0;
+            if (_slotSrcSize.TryGetValue(slot, out var src)) { w = src.W; h = src.H; }
+            if (w <= 0 || h <= 0) { w = box?.Image?.Width ?? 0; h = box?.Image?.Height ?? 0; }
+            if (w <= 0 || h <= 0) return;
+
+            string img = _slotDataUrl.TryGetValue(slot, out var d) ? d : "";
+            string svg = _slotSvg.TryGetValue(slot, out var s) ? s : "";
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(new { w, h, img, svg });
+                wv.CoreWebView2.PostWebMessageAsJson(json);
+            }
+            catch { }
+        }
+
+        private void ClearOverlays()
+        {
+            foreach (var slot in _slotBoxes.Keys)
+            {
+                _slotDataUrl.TryRemove(slot, out _);
+                _slotSvg.TryRemove(slot, out _);
+                _slotSrcSize.TryRemove(slot, out _);
+            }
+            foreach (var slot in _slotWebViews.Keys)
+            {
+                if (!_slotWebViewReady.Contains(slot)) continue;
+                try { _slotWebViews[slot].CoreWebView2?.PostWebMessageAsJson("{\"clear\":true}"); } catch { }
+            }
+        }
+
+        /// <summary>叠加图 HTML：图像与 SVG 按原始像素坐标等比缩放居中，与产品图 Zoom 行为一致。</summary>
+        private const string OverlayHtml = @"<!doctype html><html><head><meta charset=""utf-8""><style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+#fit{position:absolute;left:0;top:0}
+#im,#sv{position:absolute;left:0;top:0;width:100%;height:100%}
+#im{display:block}
+</style></head><body>
+<div id=""fit""><img id=""im""><div id=""sv""></div></div>
+<script>
+(function(){
+ var fit=document.getElementById('fit'), im=document.getElementById('im'), sv=document.getElementById('sv');
+ var W=0,H=0;
+ function layout(){
+   if(!W||!H) return;
+   var s=Math.min(window.innerWidth/W, window.innerHeight/H);
+   fit.style.width=(W*s)+'px'; fit.style.height=(H*s)+'px';
+   fit.style.left=((window.innerWidth-W*s)/2)+'px'; fit.style.top=((window.innerHeight-H*s)/2)+'px';
+ }
+ window.addEventListener('resize',layout);
+ window.chrome.webview.addEventListener('message',function(e){
+   var d=e.data||{};
+   if(d.clear){ im.removeAttribute('src'); sv.replaceChildren(); return; }
+   if(d.w>0&&d.h>0){ W=d.w; H=d.h; }
+   if(d.img){ im.src=d.img; }
+   if(d.svg){
+     try{
+       var doc=new DOMParser().parseFromString(d.svg,'image/svg+xml');
+       var root=doc.documentElement;
+       if(root&&root.nodeName.toLowerCase()==='svg'){
+         root.setAttribute('viewBox','0 0 '+W+' '+H);
+         root.setAttribute('preserveAspectRatio','none');
+         root.setAttribute('width','100%');
+         root.setAttribute('height','100%');
+         sv.replaceChildren(document.importNode(root,true));
+       }
+     }catch(_){}
+   }
+   layout();
+ });
+})();
+</script></body></html>";
+
+        /// <summary>位图转 JPEG data URL（叠加图用全分辨率图像，保证与产品图细节一致）。</summary>
+        private static string ToDataUrl(Image img)
+        {
+            if (img == null) return "";
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                var codec = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
+                    .First(c => c.FormatID == System.Drawing.Imaging.ImageFormat.Jpeg.Guid);
+                using var ep = new System.Drawing.Imaging.EncoderParameters(1);
+                ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 90L);
+                img.Save(ms, codec, ep);
+                return "data:image/jpeg;base64," + System.Convert.ToBase64String(ms.ToArray());
+            }
+            catch { return ""; }
         }
 
         // ==================== WebView2 path ====================
@@ -406,6 +610,8 @@ namespace CameraViewerDotnet
             UpdateMaxBtn();
             _refreshBtn.Text = I18n.T("refresh");
             _refreshBtn.IconSvg = AntIcon.Svg(AntIcon.Reload);
+            if (_productBtn != null) _productBtn.Text = I18n.T("productImage");
+            if (_overlayBtn != null) _overlayBtn.Text = I18n.T("overlayImage");
             var conn = ConfigService.NormalizeConn(ConfigService.EnsureItem(_id).conn);
             _urlBox.PlaceholderText = conn == "cogsocket" ? I18n.T("connPlaceholder") : I18n.T("urlPlaceholder");
             _remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
@@ -503,6 +709,11 @@ namespace CameraViewerDotnet
                         }
                     }
                 }
+                _slotWebViews.Clear();
+                _slotWebViewReady.Clear();
+                _slotDataUrl.Clear();
+                _slotSvg.Clear();
+                _slotSrcSize.Clear();
             }
         }
     }

@@ -15,7 +15,7 @@
 | 方式 | 说明 | 渲染 |
 |---|---|---|
 | **Http** | 康耐视 In-Sight、海康等 HTTP HMI 网页相机 | WebView2 内嵌加载 HMI 页面 |
-| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）→ PictureBox 子网格，每次拍照先填 640 宽缩略图、后台再补原图；配置不完整时显示提示，**不回退 HTTP HMI** |
+| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）→ PictureBox 子网格，每次拍照先填 640 宽缩略图、后台再补原图；顶部可切换**产品图 / 叠加图**（叠加图用 WebView2 渲染相机 SVGLayer）；配置不完整时显示提示，**不回退 HTTP HMI** |
 | **GigE** | GigE Vision 相机（仅保存序列号 / 曝光配置） | 原生取流未接入；设置页不提供 URL 输入，单元格暂无画面（若沿用旧配置的 `ip` 则按 WebView2 加载） |
 
 ### CogSocket 子网格拆分（多面产品场景）
@@ -32,6 +32,16 @@
 - 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
 
+### 产品图 / 叠加图切换
+
+- 子网格单元格顶部工具栏新增 **产品图** / **叠加图** 两个按钮（仅 CogSocket 子网格显示），默认产品图，当前模式以主色高亮，语言切换时同步文字
+- **产品图**：显示已取回的 640 宽缩略图，原图补取成功后原位替换（PictureBox，`SizeMode=Zoom`）
+- **叠加图**：加载时为每个槽位创建一个 WebView2，把该次拍照的图像与其叠加图形放在同一层渲染，开关只切换可见性，避免重复初始化
+- 叠加图形来源：`resultChanged` 的 `acqImageView.layers` 中 `$type=SVGLayer` 的 `url`（形如 `/cam0/app/views/{viewId}/layers/{n}/svg`），随该次拍照一起取回（约 4KB）；同层的 `GraphicsLayer`（JSON 版）未使用
+- SVG 本身不带 `width/height/viewBox`，其用户坐标就是**采集图像原始像素坐标**（如 2448×2048）；前端注入 `viewBox="0 0 原图宽 原图高"` 与 `preserveAspectRatio="none"`，等比缩放居中，与产品图的 `Zoom` 行为一致
+- 缩略图仅用于显示，叠加图的 `viewBox` 始终使用本事件主采集图层的原始宽高，避免图形被裁切或错位
+- 新一轮产品到达清空子网格时，同步清空叠加层图像与 SVG；叠加模式下新拍照到达会立即刷新该槽位
+
 ### 一台相机一条连接（共享 CogSocket）
 
 - 相同 `IP:Port` 的多个 CameraCell 共用 `CogSocketManager` 中的一条 WebSocket（引用计数，最后一个 Cell 释放后自动关闭）
@@ -43,7 +53,7 @@
 
 - 1–36 路相机布局（1/2/4/6/9/12/16/20/24/25/30/36）
 - 错峰加载：第 i 路相机延时 i×N 秒（默认 10s，可配 0=立即）再加载，避免多路同时打开造成网络风暴
-- 每路格子：URL / 备注编辑（失焦或回车即保存）、锁定（锁定后只读）、刷新、最大化/还原
+- 每路格子：URL / 备注编辑（失焦或回车即保存）、锁定（锁定后只读）、刷新、最大化/还原；CogSocket 子网格另含产品图/叠加图切换
 
 ### 设置窗口（7 个标签页）
 
@@ -132,7 +142,7 @@ CameraViewerDotnet/
 ├── CameraViewer/                # 主程序
 │   ├── App.cs                   # Main + Transit/Cleaner 初始化
 │   ├── MainWindow.cs            # 36 路网格 + PageHeader + Menu + 状态栏
-│   ├── CameraCell.cs            # WebView2 / CogSocket 子网格 PictureBox（自适应）
+│   ├── CameraCell.cs            # WebView2 / CogSocket 子网格 PictureBox + 产品图/叠加图切换（每槽位 WebView2 渲染 SVG）
 │   ├── SettingsWindow.cs        # 7 标签页设置窗口（含 DataGridView 部件编辑器）
 │   ├── ConfigService.cs         # 模型 + bootstrap.json 多开 + 持久化
 │   ├── I18n.cs                  # zh/en 双语

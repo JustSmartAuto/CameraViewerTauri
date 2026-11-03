@@ -38,6 +38,8 @@ namespace CameraViewer
             ["unlock"] = new[] { "解锁", "Unlock" },
             ["refresh"] = new[] { "刷新", "Refresh" },
             ["maximize"] = new[] { "最大化", "Maximize" },
+            ["productImage"] = new[] { "产品图", "Product" },
+            ["overlayImage"] = new[] { "叠加图", "Overlay" },
             ["restore"] = new[] { "还原", "Restore" },
             ["themeLight"] = new[] { "明亮", "Light" },
             ["themeDark"] = new[] { "暗黑", "Dark" },
