@@ -24,6 +24,7 @@ namespace CameraViewerDotnet
         private bool _webViewReady;
 
         // Sub-grid path: cogsocket + subGridCount > 1
+        private readonly bool _isCogSocket;
         private readonly bool _useSubGrid;
         private readonly int _subGridCount;
         private readonly string _identifierCell;                      // 拍照标识单元格（如 A21）
@@ -32,6 +33,8 @@ namespace CameraViewerDotnet
         private readonly Dictionary<int, PictureBox> _slotBoxes = new Dictionary<int, PictureBox>();
         private int _firstSlot = -1;   // 最小绑定槽位：该槽位拍照到达时表示新一轮开始，先清空所有子网格
         private readonly TableLayoutPanel _subGridPanel;
+        private Panel _placeholderHost;
+        private System.Windows.Forms.Label _placeholderLabel;
         private CogSocketCamera _cogCam;
 
         private bool _isMaximized;
@@ -50,6 +53,7 @@ namespace CameraViewerDotnet
             Padding = new Padding(1);
 
             // Decide rendering path
+            _isCogSocket = conn == "cogsocket";
             _identifierCell = (item.identifierCell ?? "").Trim();
             _bindings = (item.cellBindings ?? new List<CellBinding>())
                 .Where(b => b != null && !string.IsNullOrWhiteSpace(b.value))
@@ -129,6 +133,13 @@ namespace CameraViewerDotnet
                 Controls.Add(root);
                 // Connect CogSocket
                 _ = InitCogSocketAsync();
+            }
+            else if (_isCogSocket)
+            {
+                // CogSocket 未完成配置：不回退 HTTP，仅显示配置提示
+                root.Controls.Add(BuildCogSocketPlaceholder(), 0, 1);
+                root.Controls.Add(_top, 0, 0);
+                Controls.Add(root);
             }
             else
             {
@@ -213,6 +224,25 @@ namespace CameraViewerDotnet
                     _slotBoxes[i] = pb;
             }
             return panel;
+        }
+
+        // ==================== CogSocket placeholder ====================
+
+        /// <summary>CogSocket 配置不完整时显示提示，不加载 HTTP HMI 页面。</summary>
+        private Panel BuildCogSocketPlaceholder()
+        {
+            _placeholderHost = new Panel { Dock = DockStyle.Fill, BackColor = ThemeManager.Bg };
+            _placeholderLabel = new System.Windows.Forms.Label
+            {
+                Text = I18n.T("cogSocketNotConfigured"),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = ThemeManager.FgDim,
+                Font = new Font("Microsoft YaHei UI", 9f),
+                Padding = new Padding(12),
+            };
+            _placeholderHost.Controls.Add(_placeholderLabel);
+            return _placeholderHost;
         }
 
         private static (int cols, int rows) SubGridLayout(int count) => count switch
@@ -370,6 +400,7 @@ namespace CameraViewerDotnet
             var conn = ConfigService.NormalizeConn(ConfigService.EnsureItem(_id).conn);
             _urlBox.PlaceholderText = conn == "cogsocket" ? I18n.T("connPlaceholder") : I18n.T("urlPlaceholder");
             _remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
+            if (_placeholderLabel != null) _placeholderLabel.Text = I18n.T("cogSocketNotConfigured");
             PostHmiLang();
         }
 
@@ -377,6 +408,11 @@ namespace CameraViewerDotnet
         {
             BackColor = ThemeManager.Bg2;
             _top.BackColor = ThemeManager.Bg2;
+            if (_placeholderHost != null)
+            {
+                _placeholderHost.BackColor = ThemeManager.Bg;
+                _placeholderLabel.ForeColor = ThemeManager.FgDim;
+            }
             if (_useSubGrid && _subGridPanel != null)
             {
                 _subGridPanel.BackColor = ThemeManager.Bg2;
@@ -422,6 +458,8 @@ namespace CameraViewerDotnet
                 await InitCogSocketAsync();
                 return;
             }
+            // CogSocket 未完成配置：不回退 HTTP WebView2
+            if (_isCogSocket) return;
             if (!_webViewReady)
             {
                 try { await _webView.EnsureCoreWebView2Async(null); }

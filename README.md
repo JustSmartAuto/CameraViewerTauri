@@ -15,7 +15,7 @@
 | 方式 | 说明 | 渲染 |
 |---|---|---|
 | **Http** | 康耐视 In-Sight、海康等 HTTP HMI 网页相机 | WebView2 内嵌加载 HMI 页面 |
-| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 默认 WebView2；**配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）** → 自动切 PictureBox 子网格模式，每次拍照按标识取值把原图填到对应槽位 |
+| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）→ PictureBox 子网格，每次拍照按标识取值把原图填到对应槽位；配置不完整时显示提示，**不回退 HTTP HMI** |
 | **GigE** | GigE Vision 相机（仅保存序列号 / 曝光配置） | 原生取流未接入；设置页不提供 URL 输入，单元格暂无画面（若沿用旧配置的 `ip` 则按 WebView2 加载） |
 
 ### CogSocket 子网格拆分（多面产品场景）
@@ -25,7 +25,7 @@
 - **`subGridCount`**：下拉选择 `[1, 2, 4, 6, 8]`（对应 1×1 / 2×1 / 2×2 / 3×2 / 4×2 布局）
 - **`cellBindings`**：每个槽位填一个标识取值，值到达即把该次拍照的**原图**填入对应槽位；槽位号与子网格位置一一对应
 - 每个槽位左上角显示绑定的标识取值（未绑定时显示 `#槽位号`）
-- 仅当 `conn=cogsocket`、`subGridCount>1`、`identifierCell` 非空且至少有一个绑定值时才会切子网格模式，否则回退 WebView2
+- 仅当 `conn=cogsocket`、`subGridCount>1`、`identifierCell` 非空且至少有一个绑定值时才会启用子网格模式；配置不完整时单元格显示提示，**不回退 HTTP HMI 页面**
 - 最小槽位对应的取值到达时视为新一轮产品，**先清空所有子网格**，避免新旧产品图片混淆
 - 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
