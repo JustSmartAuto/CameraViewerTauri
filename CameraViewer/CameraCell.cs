@@ -21,10 +21,12 @@ namespace CameraViewerDotnet
         private readonly AntdUI.Button _productBtn;   // 产品图：仅显示采集图像
         private readonly AntdUI.Button _overlayBtn;   // 叠加图：图像 + 相机 SVGLayer
         private readonly AntdUI.Button _fitBtn;       // 适合：叠加视图复位为槽位适配尺寸
+        private readonly AntdUI.Button _webBtn;       // 网页：隐藏子网格，整格显示 HTTP HMI
         private readonly Panel _top;
 
-        // WebView2 path: http / gige / cogsocket-subGrid==1
-        private readonly Microsoft.Web.WebView2.WinForms.WebView2 _webView;
+        // WebView2 path: http / gige / cogsocket-subGrid==1；CogSocket 子网格的“网页”模式按需创建
+        private Microsoft.Web.WebView2.WinForms.WebView2 _webView;
+        private readonly TableLayoutPanel _root;
         private bool _webViewReady;
 
         // Sub-grid path: cogsocket + subGridCount > 1
@@ -48,6 +50,7 @@ namespace CameraViewerDotnet
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _slotSvg = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, (int W, int H)> _slotSrcSize = new System.Collections.Concurrent.ConcurrentDictionary<int, (int W, int H)>();
         private volatile bool _overlayMode;
+        private volatile bool _webMode;   // 网页模式：整格显示 HTTP HMI 页面，隐藏槽位
 
         private bool _isMaximized;
         private static string _hmiI18nScript;
@@ -77,10 +80,11 @@ namespace CameraViewerDotnet
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = ThemeManager.Bg2 };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            _root = root;
 
             // ---------- Top bar ----------
             _top = new Panel { Dock = DockStyle.Fill, Height = 30, BackColor = ThemeManager.Bg2 };
-            int btnCols = _useSubGrid ? 6 : 3;   // 产品图/叠加图/适合 + 锁/刷新/最大化
+            int btnCols = _useSubGrid ? 7 : 3;   // 产品图/叠加图/适合/网页 + 锁/刷新/最大化
             var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 + btnCols, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -127,6 +131,10 @@ namespace CameraViewerDotnet
                 _fitBtn = new AntdUI.Button { Text = I18n.T("fitView"), Width = 52, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _fitBtn.Click += (s, e) => FitOverlayViews();
                 topGrid.Controls.Add(_fitBtn, col++, 0);
+
+                _webBtn = new AntdUI.Button { Text = I18n.T("webView"), Width = 52, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _webBtn.Click += (s, e) => SetViewMode("web");
+                topGrid.Controls.Add(_webBtn, col++, 0);
             }
 
             _lockBtn = new AntdUI.Button { Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
@@ -161,12 +169,13 @@ namespace CameraViewerDotnet
                 Controls.Add(root);
                 // Subscribe shared CogSocket connection
                 InitCogSocket();
-                // 恢复上次保存的 产品图/叠加图 选择（句柄创建后再初始化 WebView2）
-                if (string.Equals(ConfigService.EnsureItem(_id).viewMode, "overlay", StringComparison.OrdinalIgnoreCase))
+                // 恢复上次保存的 产品图/叠加图/网页 选择（句柄创建后再初始化 WebView2）
+                var savedMode = ConfigService.EnsureItem(_id).viewMode;
+                if (!string.Equals(savedMode, "product", StringComparison.OrdinalIgnoreCase))
                 {
                     HandleCreated += (s, e) =>
                     {
-                        if (!_overlayMode) SetOverlayMode(true, persist: false);
+                        if (!_overlayMode && !_webMode) SetViewMode(savedMode, persist: false);
                     };
                 }
             }
@@ -180,22 +189,7 @@ namespace CameraViewerDotnet
             else
             {
                 // WebView2 mode
-                _webView = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
-                _webView.CoreWebView2InitializationCompleted += async (s, e) =>
-                {
-                    if (e.IsSuccess)
-                    {
-                        _webViewReady = true;
-                        _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-                        var script = LoadHmiI18nScript();
-                        if (!string.IsNullOrEmpty(script))
-                        {
-                            try { await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script); } catch { }
-                        }
-                    }
-                    Navigate();
-                };
-                root.Controls.Add(_webView, 0, 1);
+                EnsureHttpWebView();
                 root.Controls.Add(_top, 0, 0);
                 Controls.Add(root);
             }
@@ -359,6 +353,47 @@ namespace CameraViewerDotnet
             }
         }
 
+        /// <summary>产品图 / 叠加图 / 网页 三选一；网页模式隐藏槽位，整格显示 HTTP HMI，并持久化。</summary>
+        private void SetViewMode(string mode, bool persist = true)
+        {
+            if (!_useSubGrid) return;
+            _webMode = string.Equals(mode, "web", StringComparison.OrdinalIgnoreCase);
+            _overlayMode = !_webMode && string.Equals(mode, "overlay", StringComparison.OrdinalIgnoreCase);
+            if (persist) SaveViewMode(_webMode ? "web" : (_overlayMode ? "overlay" : "product"));
+            UpdateViewButtons();
+
+            if (_webMode)
+            {
+                EnsureHttpWebView();
+                if (_subGridPanel != null) _subGridPanel.Visible = false;
+                foreach (var wv in _slotWebViews.Values) wv.Visible = false;
+                _webView.Visible = true;
+                _root.Controls.SetChildIndex(_webView, 0);
+                return;
+            }
+
+            if (_webView != null) _webView.Visible = false;
+            if (_subGridPanel != null) _subGridPanel.Visible = true;
+
+            if (!_overlayMode)
+            {
+                foreach (var wv in _slotWebViews.Values) wv.Visible = false;
+                return;
+            }
+
+            EnsureOverlayWebViews();
+            foreach (var wv in _slotWebViews.Values) wv.Visible = true;
+            foreach (var slot in _slotBoxes.Keys)
+            {
+                if (!_slotDataUrl.ContainsKey(slot))
+                {
+                    var img = _slotBoxes[slot].Image;
+                    if (img != null) _slotDataUrl[slot] = ToDataUrl(img);
+                }
+                PostOverlay(slot);
+            }
+        }
+
         private void ClearAllSubGrids()
         {
             if (IsDisposed || _subGridPanel == null) return;
@@ -379,37 +414,16 @@ namespace CameraViewerDotnet
         /// <summary>切换产品图 / 叠加图显示模式（叠加视图支持滚轮缩放、拖动平移、适合复位），并持久化选择。</summary>
         private void SetOverlayMode(bool overlay, bool persist = true)
         {
-            if (!_useSubGrid) return;
-            _overlayMode = overlay;
-            UpdateViewButtons();
-            if (persist) SaveViewMode(overlay ? "overlay" : "product");
-
-            if (!overlay)
-            {
-                foreach (var wv in _slotWebViews.Values) wv.Visible = false;
-                return;
-            }
-
-            EnsureOverlayWebViews();
-            foreach (var wv in _slotWebViews.Values) wv.Visible = true;
-            // 已到达的图像立即补渲染（WebView2 尚未初始化完成的会在完成后自动补发）
-            foreach (var slot in _slotBoxes.Keys)
-            {
-                if (!_slotDataUrl.ContainsKey(slot))
-                {
-                    var img = _slotBoxes[slot].Image;
-                    if (img != null) _slotDataUrl[slot] = ToDataUrl(img);
-                }
-                PostOverlay(slot);
-            }
+            SetViewMode(overlay ? "overlay" : "product", persist);
         }
 
         private void UpdateViewButtons()
         {
             if (_productBtn == null || _overlayBtn == null) return;
-            _productBtn.Type = _overlayMode ? AntdUI.TTypeMini.Default : AntdUI.TTypeMini.Primary;
+            _productBtn.Type = (!_overlayMode && !_webMode) ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
             _overlayBtn.Type = _overlayMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
             if (_fitBtn != null) _fitBtn.Enabled = _overlayMode;
+            if (_webBtn != null) _webBtn.Type = _webMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
         }
 
         /// <summary>把当前的 产品图/叠加图 选择写回 CameraConfig.json。</summary>
@@ -646,6 +660,30 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
             catch { }
         }
 
+        /// <summary>按需创建 HTTP HMI 的 WebView2（CogSocket 子网格的“网页”模式复用）。</summary>
+        private void EnsureHttpWebView()
+        {
+            if (_webView != null) return;
+            var wv = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill, Visible = _webMode || !_useSubGrid };
+            wv.CoreWebView2InitializationCompleted += async (s, e) =>
+            {
+                if (e.IsSuccess)
+                {
+                    _webViewReady = true;
+                    _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+                    var script = LoadHmiI18nScript();
+                    if (!string.IsNullOrEmpty(script))
+                    {
+                        try { await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script); } catch { }
+                    }
+                }
+                Navigate();
+            };
+            _webView = wv;
+            _root.Controls.Add(wv, 0, 1);
+            if (_webMode) wv.BringToFront();
+        }
+
         private void Navigate()
         {
             if (_webView == null) return;
@@ -683,6 +721,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
             if (_productBtn != null) _productBtn.Text = I18n.T("productImage");
             if (_overlayBtn != null) _overlayBtn.Text = I18n.T("overlayImage");
             if (_fitBtn != null) _fitBtn.Text = I18n.T("fitView");
+            if (_webBtn != null) _webBtn.Text = I18n.T("webView");
             var conn = ConfigService.NormalizeConn(ConfigService.EnsureItem(_id).conn);
             _urlBox.PlaceholderText = conn == "cogsocket" ? I18n.T("connPlaceholder") : I18n.T("urlPlaceholder");
             _remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
@@ -714,7 +753,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
             var item = ConfigService.EnsureItem(_id);
             item.ip = _urlBox.Text.Trim();
             ConfigService.SaveCamera();
-            if (!_useSubGrid && _webViewReady && item.locked)
+            if ((!_useSubGrid || _webMode) && _webViewReady && item.locked)
                 Navigate();
         }
 
@@ -737,6 +776,11 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
                 InitCogSocket();
                 // 刷新：重建该相机的共享连接（同相机的其他 Cell 会自动恢复接收）
                 CogSocketManager.Reconnect(ConfigService.EnsureItem(_id).ip);
+                // 网页模式下同时刷新 HMI 页面
+                if (_webMode && _webView != null)
+                {
+                    try { if (_webViewReady) _webView.Reload(); else Navigate(); } catch { }
+                }
                 return;
             }
             // CogSocket 未完成配置：不回退 HTTP WebView2

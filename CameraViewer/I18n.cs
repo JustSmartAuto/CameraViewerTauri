@@ -41,6 +41,7 @@ namespace CameraViewer
             ["productImage"] = new[] { "产品图", "Product" },
             ["overlayImage"] = new[] { "叠加图", "Overlay" },
             ["fitView"] = new[] { "适合", "Fit" },
+            ["webView"] = new[] { "网页", "Web" },
             ["restore"] = new[] { "还原", "Restore" },
             ["themeLight"] = new[] { "明亮", "Light" },
             ["themeDark"] = new[] { "暗黑", "Dark" },

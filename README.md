@@ -39,7 +39,8 @@
 - **叠加图**：加载时为每个槽位创建一个 WebView2，把该次拍照的图像与其叠加图形放在同一层渲染，开关只切换可见性，避免重复初始化
 - **适合**：叠加模式下可用，把当前槽位的缩放/平移复位为“整幅图像刚好放进槽位”的初始状态
 - **缩放与拖动**：叠加槽位内滚轮以鼠标位置为中心缩放（0.1×～20×，`zoom=1` 即适合尺寸），按住左键拖动平移；切换产品图/叠加图或新拍照到达时保留当前缩放与位置
-- **状态持久化**：产品图/叠加图的选择按相机写入 `CameraConfig.json` 的 `viewMode`（`product` / `overlay`），下次启动自动恢复
+- **网页**：隐藏全部子网格槽位，整个单元格显示该相机的 HTTP HMI 页面（与 `conn=http` 相同的 WebView2 页面，地址取相机 IP，如 `http://192.168.10.58`）；切回产品图/叠加图时保留已加载页面
+- **状态持久化**：产品图/叠加图/网页的选择按相机写入 `CameraConfig.json` 的 `viewMode`（`product` / `overlay` / `web`），下次启动自动恢复；网页模式下点刷新会同时重建 CogSocket 订阅并重载 HMI 页面
 - 叠加图形来源：`resultChanged` 的 `acqImageView.layers` 中 `$type=SVGLayer` 的 `url`（形如 `/cam0/app/views/{viewId}/layers/{n}/svg`），随该次拍照一起取回（约 4KB）；同层的 `GraphicsLayer`（JSON 版）未使用
 - SVG 本身不带 `width/height/viewBox`，其用户坐标就是**采集图像原始像素坐标**（如 2448×2048）；前端注入 `viewBox="0 0 原图宽 原图高"` 与 `preserveAspectRatio="none"`，等比缩放居中，与产品图的 `Zoom` 行为一致
 - 缩略图仅用于显示，叠加图的 `viewBox` 始终使用本事件主采集图层的原始宽高，避免图形被裁切或错位
