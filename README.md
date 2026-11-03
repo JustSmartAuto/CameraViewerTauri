@@ -4,7 +4,7 @@
 
 ## 截图
 
-![CameraViewerDotnet 主界面](assets/screenshot1.png)
+![CameraViewerDotnet 主界面](assets/screenshot2.png)
 
 主界面：多路相机网格布局（最大 36 格），Http/GigE 内嵌 WebView2 加载工业相机 HMI 网页，CogSocket 相机按 `identifierCell` + `cellBindings` 绑定拆成 PictureBox 子网格显示拍照原图；顶部 PageHeader + AntdUI.Menu 水平菜单（设置/主题/语言/关于）；底部状态栏显示系统时间与版本号。
 

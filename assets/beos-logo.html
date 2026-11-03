@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CameraViewer · BeOS Logo</title>
+<style>
+  :root {
+    /* 来自 ThemeManager.Beos + retro-design-system tokens */
+    --bg: #2a5556;
+    --bg-2: #1d3d3e;
+    --chrome: #cfcfcf;
+    --chrome-light: #e8e8e8;
+    --chrome-lighter: #ffffff;
+    --chrome-dark: #888888;
+    --chrome-darker: #404040;
+    --yellow: #ffcc00;
+    --teal: #006666;
+    --ink: #000;
+    --red-dot: #e04040;
+    /* 本 logo 专用 */
+    --title-a: #4a6fa5;   /* 蓝紫渐变起点 */
+    --title-b: #857cc9;   /* 蓝紫渐变终点 */
+    --content: #f0ead2;   /* 米色内容区 */
+    --status: #1f3a3a;   /* 底部状态栏深色 */
+    --blue-dot: #3a7bd5;
+    --green-dot: #3cbb74;
+    --shadow-outer: 4px 4px 0 rgba(0,0,0,0.45);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(circle at 22% 28%, #3c7072 0%, transparent 55%),
+      radial-gradient(circle at 78% 72%, var(--bg-2) 0%, transparent 60%),
+      var(--bg);
+    font-family: "Helvetica", "Swiss 721", "Segoe UI", sans-serif;
+  }
+
+  /* === BeOS 窗口 === */
+  .beos-window {
+    width: 560px;
+    height: 380px;
+    background: var(--chrome);
+    border: 1px solid var(--chrome-darker);
+    box-shadow: var(--shadow-outer);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 标题栏 */
+  .beos-titlebar {
+    height: 30px;
+    background: linear-gradient(to bottom right, var(--title-a) 0%, var(--title-b) 100%);
+    border-bottom: 1px solid var(--chrome-darker);
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 8px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+  }
+
+  /* 左上三色圆点（参考图风格：红/蓝/绿） */
+  .beos-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.45);
+    box-shadow:
+      inset 1px 1px 0 rgba(255,255,255,0.55),
+      inset -1px -1px 0 rgba(0,0,0,0.18);
+  }
+  .beos-dot.red   { background: var(--red-dot); }
+  .beos-dot.blue  { background: var(--blue-dot); }
+  .beos-dot.green { background: var(--green-dot); }
+
+  .beos-title-text {
+    flex: 1;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+    padding-left: 6px;
+  }
+
+  /* 内容区（米色） */
+  .beos-content {
+    flex: 1;
+    background: var(--content);
+    border: 1px solid var(--chrome-darker);
+    border-top: none;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* 相机图标 SVG 容器 */
+  .camera-logo {
+    width: 160px;
+    height: 110px;
+    display: block;
+    filter: drop-shadow(2px 3px 0 rgba(0,0,0,0.18));
+  }
+
+  .camera-logo path {
+    fill: var(--ink);
+  }
+
+  /* 相机下方的品牌文案 */
+  .brand-name {
+    margin-top: 14px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--ink);
+    letter-spacing: 2px;
+  }
+  .brand-sub {
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--chrome-darker);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  /* 底部状态栏 */
+  .beos-statusbar {
+    height: 22px;
+    background: var(--status);
+    border-top: 1px solid var(--chrome-darker);
+    color: var(--chrome-lighter);
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .status-item { display: flex; align-items: center; gap: 4px; }
+  .status-led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--yellow);
+    box-shadow: 0 0 4px var(--yellow);
+  }
+  .status-led.teal { background: var(--teal); box-shadow: 0 0 4px var(--teal); }
+
+  /* 角的"BeOS chrome"细描边 —— 让它更像 BeOS 而非 OSX */
+  .beos-window::before, .beos-window::after {
+    content: "";
+    position: absolute;
+    width: 8px; height: 8px;
+    border: 1px solid var(--chrome-darker);
+  }
+  .beos-window::before { left: 2px; top: 2px; border-right: none; border-bottom: none; }
+  .beos-window::after  { right: 2px; bottom: 2px; border-left: none; border-top: none; }
+</style>
+</head>
+<body>
+
+<div class="beos-window">
+
+  <!-- 标题栏 -->
+  <div class="beos-titlebar">
+    <span class="beos-dot red"></span>
+    <span class="beos-dot blue"></span>
+    <span class="beos-dot green"></span>
+    <span class="beos-title-text">CameraViewerDotnet — Inspector</span>
+  </div>
+
+  <!-- 内容区：相机图标 + 品牌名 -->
+  <div class="beos-content">
+    <!-- 纯 SVG 相机图标（扁平几何风格，类似参考图） -->
+    <svg class="camera-logo" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg" aria-label="camera">
+      <!-- 相机主体（梯形机身） -->
+      <path d="M16 46 L184 46 L172 128 L28 128 Z" />
+      <!-- 顶部提手/取景器凸出 -->
+      <path d="M56 26 L144 26 L152 46 L48 46 Z" />
+      <!-- 镜头外圈（圆） -->
+      <circle cx="100" cy="88" r="30" fill="#f0ead2" />
+      <circle cx="100" cy="88" r="30" fill="none" stroke="#000" stroke-width="6" />
+      <!-- 镜头内圈（圆） -->
+      <circle cx="100" cy="88" r="14" fill="#000" />
+      <!-- 镜头高光（小三角） -->
+      <path d="M92 78 L100 78 L92 86 Z" fill="#fff" opacity="0.85" />
+      <!-- 快门按钮（右上方小圆） -->
+      <rect x="148" y="36" width="18" height="10" rx="3" fill="#000" />
+      <!-- 镜头转接筒（左右小凸块） -->
+      <rect x="32" y="78" width="10" height="20" rx="2" fill="#000" />
+      <rect x="158" y="78" width="10" height="20" rx="2" fill="#000" />
+    </svg>
+
+    <div class="brand-name">CAMERAVIEWER</div>
+    <div class="brand-sub">Dotnet · BeOS Chrome</div>
+  </div>
+
+  <!-- 底部状态栏 -->
+  <div class="beos-statusbar">
+    <span class="status-item"><span class="status-led"></span> READY</span>
+    <span class="status-item"><span class="status-led teal"></span> 1 / 36 Cameras</span>
+    <span class="status-item" style="margin-left:auto">BeOS Teal · v26.11.2.1</span>
+  </div>
+
+</div>
+
+</body>
+</html>

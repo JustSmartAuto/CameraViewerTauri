@@ -14,7 +14,7 @@
     <InformationalVersion>26.11.2.1</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>CameraViewerDotnet.App</StartupObject>
-    <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
+    <ApplicationIcon>..\assets\camera-viewer.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
