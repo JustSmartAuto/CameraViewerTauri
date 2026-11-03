@@ -34,6 +34,8 @@ namespace CameraViewer
         public string identifierCell { get; set; } = "";
         // CogSocket: 标识单元格取值 → 子网格槽位 绑定列表
         public List<CellBinding> cellBindings { get; set; } = new List<CellBinding>();
+        // CogSocket 子网格显示模式："product"=产品图（默认） | "overlay"=叠加图
+        public string viewMode { get; set; } = "product";
     }
 
     public class CameraConfig
@@ -212,6 +214,7 @@ namespace CameraViewer
                         // 兼容旧配置：cellSubscribe 曾用于填写拍照标识单元格（取首个）
                         identifierCell = n["identifierCell"]?.GetValue<string>()
                             ?? (n["cellSubscribe"]?.GetValue<string>() ?? "").Split(',').FirstOrDefault()?.Trim() ?? "",
+                        viewMode = n["viewMode"]?.GetValue<string>() ?? "product",
                     };
                     foreach (var b in n["cellBindings"]?.AsArray() ?? new JsonArray())
                     {

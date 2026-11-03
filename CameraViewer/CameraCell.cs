@@ -20,6 +20,7 @@ namespace CameraViewerDotnet
         private readonly AntdUI.Button _maxBtn;
         private readonly AntdUI.Button _productBtn;   // 产品图：仅显示采集图像
         private readonly AntdUI.Button _overlayBtn;   // 叠加图：图像 + 相机 SVGLayer
+        private readonly AntdUI.Button _fitBtn;       // 适合：叠加视图复位为槽位适配尺寸
         private readonly Panel _top;
 
         // WebView2 path: http / gige / cogsocket-subGrid==1
@@ -79,7 +80,7 @@ namespace CameraViewerDotnet
 
             // ---------- Top bar ----------
             _top = new Panel { Dock = DockStyle.Fill, Height = 30, BackColor = ThemeManager.Bg2 };
-            int btnCols = _useSubGrid ? 5 : 3;   // 产品图/叠加图 + 锁/刷新/最大化
+            int btnCols = _useSubGrid ? 6 : 3;   // 产品图/叠加图/适合 + 锁/刷新/最大化
             var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 + btnCols, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -122,6 +123,10 @@ namespace CameraViewerDotnet
                 _overlayBtn = new AntdUI.Button { Text = I18n.T("overlayImage"), Width = 64, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _overlayBtn.Click += (s, e) => SetOverlayMode(true);
                 topGrid.Controls.Add(_overlayBtn, col++, 0);
+
+                _fitBtn = new AntdUI.Button { Text = I18n.T("fitView"), Width = 52, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _fitBtn.Click += (s, e) => FitOverlayViews();
+                topGrid.Controls.Add(_fitBtn, col++, 0);
             }
 
             _lockBtn = new AntdUI.Button { Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
@@ -156,6 +161,14 @@ namespace CameraViewerDotnet
                 Controls.Add(root);
                 // Subscribe shared CogSocket connection
                 InitCogSocket();
+                // 恢复上次保存的 产品图/叠加图 选择（句柄创建后再初始化 WebView2）
+                if (string.Equals(ConfigService.EnsureItem(_id).viewMode, "overlay", StringComparison.OrdinalIgnoreCase))
+                {
+                    HandleCreated += (s, e) =>
+                    {
+                        if (!_overlayMode) SetOverlayMode(true, persist: false);
+                    };
+                }
             }
             else if (_isCogSocket)
             {
@@ -363,12 +376,13 @@ namespace CameraViewerDotnet
 
         // ==================== Overlay (SVG) ====================
 
-        /// <summary>切换产品图 / 叠加图显示模式。</summary>
-        private void SetOverlayMode(bool overlay)
+        /// <summary>切换产品图 / 叠加图显示模式（叠加视图支持滚轮缩放、拖动平移、适合复位），并持久化选择。</summary>
+        private void SetOverlayMode(bool overlay, bool persist = true)
         {
             if (!_useSubGrid) return;
             _overlayMode = overlay;
             UpdateViewButtons();
+            if (persist) SaveViewMode(overlay ? "overlay" : "product");
 
             if (!overlay)
             {
@@ -395,6 +409,30 @@ namespace CameraViewerDotnet
             if (_productBtn == null || _overlayBtn == null) return;
             _productBtn.Type = _overlayMode ? AntdUI.TTypeMini.Default : AntdUI.TTypeMini.Primary;
             _overlayBtn.Type = _overlayMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
+            if (_fitBtn != null) _fitBtn.Enabled = _overlayMode;
+        }
+
+        /// <summary>把当前的 产品图/叠加图 选择写回 CameraConfig.json。</summary>
+        private void SaveViewMode(string mode)
+        {
+            try
+            {
+                var item = ConfigService.EnsureItem(_id);
+                if (item.viewMode == mode) return;
+                item.viewMode = mode;
+                ConfigService.SaveCamera();
+            }
+            catch { }
+        }
+
+        /// <summary>适合：把所有叠加视图的缩放/平移复位为槽位适配。</summary>
+        private void FitOverlayViews()
+        {
+            foreach (var slot in _slotWebViews.Keys)
+            {
+                if (!_slotWebViewReady.Contains(slot)) continue;
+                try { _slotWebViews[slot].CoreWebView2?.PostWebMessageAsJson("{\"fit\":true}"); } catch { }
+            }
         }
 
         private void EnsureOverlayWebViews()
@@ -473,26 +511,58 @@ namespace CameraViewerDotnet
 
         /// <summary>叠加图 HTML：图像与 SVG 按原始像素坐标等比缩放居中，与产品图 Zoom 行为一致。</summary>
         private const string OverlayHtml = @"<!doctype html><html><head><meta charset=""utf-8""><style>
-html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none;touch-action:none;cursor:grab}
 #fit{position:absolute;left:0;top:0}
 #im,#sv{position:absolute;left:0;top:0;width:100%;height:100%}
-#im{display:block}
+#im{display:block;-webkit-user-drag:none}
 </style></head><body>
 <div id=""fit""><img id=""im""><div id=""sv""></div></div>
 <script>
 (function(){
  var fit=document.getElementById('fit'), im=document.getElementById('im'), sv=document.getElementById('sv');
- var W=0,H=0;
+ var W=0,H=0, zoom=1, panX=0, panY=0;
+ function baseScale(){ return Math.min(window.innerWidth/W, window.innerHeight/H); }
  function layout(){
    if(!W||!H) return;
-   var s=Math.min(window.innerWidth/W, window.innerHeight/H);
+   var s=baseScale()*zoom;
    fit.style.width=(W*s)+'px'; fit.style.height=(H*s)+'px';
-   fit.style.left=((window.innerWidth-W*s)/2)+'px'; fit.style.top=((window.innerHeight-H*s)/2)+'px';
+   fit.style.left=((window.innerWidth-W*s)/2+panX)+'px';
+   fit.style.top=((window.innerHeight-H*s)/2+panY)+'px';
  }
+ function reset(){ zoom=1; panX=0; panY=0; layout(); }
  window.addEventListener('resize',layout);
+ // 滚轮以鼠标位置为中心缩放（zoom=1 即适合槽位）
+ document.addEventListener('wheel',function(e){
+   if(!W||!H) return;
+   e.preventDefault();
+   var nz=Math.max(0.1, Math.min(20, zoom*Math.exp(-e.deltaY*0.0015)));
+   if(nz===zoom) return;
+   var s0=baseScale()*zoom, ns=baseScale()*nz;
+   var cx=e.clientX-window.innerWidth/2-panX, cy=e.clientY-window.innerHeight/2-panY;
+   panX=e.clientX-window.innerWidth/2-cx*(ns/s0);
+   panY=e.clientY-window.innerHeight/2-cy*(ns/s0);
+   zoom=nz; layout();
+ },{passive:false});
+ // 鼠标拖动平移
+ var drag=false, lx=0, ly=0;
+ document.addEventListener('pointerdown',function(e){
+   if(e.button!==0) return;
+   drag=true; lx=e.clientX; ly=e.clientY;
+   document.body.style.cursor='grabbing'; e.preventDefault();
+ });
+ document.addEventListener('pointermove',function(e){
+   if(!drag) return;
+   panX+=e.clientX-lx; panY+=e.clientY-ly;
+   lx=e.clientX; ly=e.clientY; layout();
+ });
+ function endDrag(){ if(!drag) return; drag=false; document.body.style.cursor='grab'; }
+ document.addEventListener('pointerup',endDrag);
+ document.addEventListener('pointercancel',endDrag);
+ document.addEventListener('dragstart',function(e){ e.preventDefault(); });
  window.chrome.webview.addEventListener('message',function(e){
    var d=e.data||{};
    if(d.clear){ im.removeAttribute('src'); sv.replaceChildren(); return; }
+   if(d.fit){ reset(); return; }
    if(d.w>0&&d.h>0){ W=d.w; H=d.h; }
    if(d.img){ im.src=d.img; }
    if(d.svg){
@@ -612,6 +682,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden}
             _refreshBtn.IconSvg = AntIcon.Svg(AntIcon.Reload);
             if (_productBtn != null) _productBtn.Text = I18n.T("productImage");
             if (_overlayBtn != null) _overlayBtn.Text = I18n.T("overlayImage");
+            if (_fitBtn != null) _fitBtn.Text = I18n.T("fitView");
             var conn = ConfigService.NormalizeConn(ConfigService.EnsureItem(_id).conn);
             _urlBox.PlaceholderText = conn == "cogsocket" ? I18n.T("connPlaceholder") : I18n.T("urlPlaceholder");
             _remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
