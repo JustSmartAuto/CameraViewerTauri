@@ -523,12 +523,18 @@ namespace CameraViewerDotnet
             }
         }
 
-        /// <summary>叠加图 HTML：图像与 SVG 按原始像素坐标等比缩放居中，与产品图 Zoom 行为一致。</summary>
+        /// <summary>叠加图 HTML：图像与 SVG 按原始像素坐标等比缩放居中，与产品图 Zoom 行为一致。
+        /// 使用单一 #fit 容器承载图像与 SVG 叠加层，通过 CSS width/height/left/top 控制位置与缩放。
+        /// 关键：#im/#sv 与注入的 SVG root 必须 pointer-events:none，避免它们拦截 wheel/pointer 事件
+        /// 导致滚轮缩放和拖动平移失效。
+        /// </summary>
         private const string OverlayHtml = @"<!doctype html><html><head><meta charset=""utf-8""><style>
 html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none;touch-action:none;cursor:grab}
+*{box-sizing:border-box}
 #fit{position:absolute;left:0;top:0}
-#im,#sv{position:absolute;left:0;top:0;width:100%;height:100%}
-#im{display:block;-webkit-user-drag:none}
+#im,#sv{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+#im{display:block;object-fit:fill;-webkit-user-drag:none}
+#sv svg{pointer-events:none}
 </style></head><body>
 <div id=""fit""><img id=""im""><div id=""sv""></div></div>
 <script>
@@ -552,7 +558,9 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
    var nz=Math.max(0.1, Math.min(20, zoom*Math.exp(-e.deltaY*0.0015)));
    if(nz===zoom) return;
    var s0=baseScale()*zoom, ns=baseScale()*nz;
+   // fit 中心 = (innerW/2+panX, innerH/2+panY)，cx/cy 是鼠标相对于 fit 中心的偏移
    var cx=e.clientX-window.innerWidth/2-panX, cy=e.clientY-window.innerHeight/2-panY;
+   // 保持鼠标指向同一图像像素：偏移量按新旧缩放比缩放
    panX=e.clientX-window.innerWidth/2-cx*(ns/s0);
    panY=e.clientY-window.innerHeight/2-cy*(ns/s0);
    zoom=nz; layout();
@@ -588,6 +596,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
          root.setAttribute('preserveAspectRatio','none');
          root.setAttribute('width','100%');
          root.setAttribute('height','100%');
+         root.setAttribute('pointer-events','none');
          sv.replaceChildren(document.importNode(root,true));
        }
      }catch(_){}
