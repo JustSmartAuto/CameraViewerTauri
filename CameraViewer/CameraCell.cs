@@ -171,6 +171,7 @@ namespace CameraViewerDotnet
         private readonly AntdUI.Button _overlayBtn;   // 叠加图：图像 + 相机 SVGLayer
         private readonly AntdUI.Button _fitBtn;       // 适合：叠加视图复位为槽位适配尺寸
         private readonly AntdUI.Button _webBtn;       // 网页：隐藏子网格，整格显示 HTTP HMI
+        private AntdUI.Button _historyBtn;             // 历史胶片条开关
         private readonly Panel _top;
 
         // WebView2 path: http / gige / cogsocket-subGrid==1；CogSocket 子网格的“网页”模式按需创建
@@ -201,6 +202,13 @@ namespace CameraViewerDotnet
         private volatile bool _overlayMode;
         private volatile bool _webMode;   // 网页模式：整格显示 HTTP HMI 页面，隐藏槽位
 
+        // 历史胶片条
+        private volatile bool _historyEnabled;
+        private readonly System.Collections.Concurrent.ConcurrentQueue<Bitmap> _historyQueue = new System.Collections.Concurrent.ConcurrentQueue<Bitmap>();
+        private FlowLayoutPanel _historyBar;
+        private Form _historyPreview;                   // 悬浮大图窗口（懒创建，TopMost+无边框）
+        private readonly List<InteractiveImagePanel> _historyPanels = new List<InteractiveImagePanel>();
+
         private bool _isMaximized;
         private static string _hmiI18nScript;
 
@@ -226,14 +234,15 @@ namespace CameraViewerDotnet
             _useSubGrid = conn == "cogsocket" && item.subGridCount > 1 && _bindings.Count > 0 && _identifierCell.Length > 0;
             _subGridCount = _useSubGrid ? Math.Clamp(item.subGridCount, 1, 8) : 1;
 
-            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = ThemeManager.Bg2 };
+            var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = ThemeManager.Bg2 };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             _root = root;
 
             // ---------- Top bar ----------
             _top = new Panel { Dock = DockStyle.Fill, Height = 30, BackColor = ThemeManager.Bg2 };
-            int btnCols = _useSubGrid ? 7 : 3;   // 产品图/叠加图/适合/网页 + 锁/刷新/最大化
+            int btnCols = _useSubGrid ? 8 : 3;   // 产品图/叠加图/适合/网页/历史 + 锁/刷新/最大化
             var topGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 + btnCols, RowCount = 1, BackColor = ThemeManager.Bg2, Margin = new Padding(3, 3, 3, 1) };
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
             topGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -269,21 +278,30 @@ namespace CameraViewerDotnet
             int col = 2;
             if (_useSubGrid)
             {
-                _productBtn = new AntdUI.Button { Text = I18n.T("productImage"), Width = 64, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                int iconBtnW = 32;
+                _productBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Picture), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _productBtn.Click += (s, e) => SetOverlayMode(false);
                 topGrid.Controls.Add(_productBtn, col++, 0);
 
-                _overlayBtn = new AntdUI.Button { Text = I18n.T("overlayImage"), Width = 64, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _overlayBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Fullscreen), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _overlayBtn.Click += (s, e) => SetOverlayMode(true);
                 topGrid.Controls.Add(_overlayBtn, col++, 0);
 
-                _fitBtn = new AntdUI.Button { Text = I18n.T("fitView"), Width = 52, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _fitBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Expand), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _fitBtn.Click += (s, e) => FitOverlayViews();
                 topGrid.Controls.Add(_fitBtn, col++, 0);
 
-                _webBtn = new AntdUI.Button { Text = I18n.T("webView"), Width = 52, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _webBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Global), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _webBtn.Click += (s, e) => SetViewMode("web");
                 topGrid.Controls.Add(_webBtn, col++, 0);
+
+                // 历史按钮（仅 CogSocket 子网格模式可见）
+                var item0 = ConfigService.EnsureItem(_id);
+                _historyEnabled = item0.enableHistory;
+                _historyBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.History), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
+                _historyBtn.Type = _historyEnabled ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
+                _historyBtn.Click += (s, e) => ToggleHistoryBar();
+                topGrid.Controls.Add(_historyBtn, col++, 0);
             }
 
             _lockBtn = new AntdUI.Button { Width = 78, Height = 26, Margin = new Padding(4, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
@@ -311,10 +329,13 @@ namespace CameraViewerDotnet
             // ---------- Rendering area ----------
             if (_useSubGrid)
             {
-                // Sub-grid mode: PictureBoxes
+                // Sub-grid mode
                 _subGridPanel = BuildSubGridPanel();
                 root.Controls.Add(_subGridPanel, 0, 1);
                 root.Controls.Add(_top, 0, 0);
+                // 历史胶片条（底部 Row 2）
+                _historyBar = BuildHistoryBar();
+                root.Controls.Add(_historyBar, 0, 2);
                 Controls.Add(root);
                 // Subscribe shared CogSocket connection
                 InitCogSocket();
@@ -498,6 +519,12 @@ namespace CameraViewerDotnet
                 _slotDataUrl[slot] = dataUrl;
                 PostOverlay(slot);
             }
+
+            // 历史胶片条：每轮（firstSlot 首次到达）把所有槽位当前图像入队
+            if (_historyEnabled && !isOriginal && slot == _firstSlot)
+            {
+                AddHistorySnapshot();
+            }
         }
 
         /// <summary>产品图 / 叠加图 / 网页 三选一；网页模式隐藏槽位，整格显示 HTTP HMI，并持久化。</summary>
@@ -569,7 +596,7 @@ namespace CameraViewerDotnet
             if (_productBtn == null || _overlayBtn == null) return;
             _productBtn.Type = (!_overlayMode && !_webMode) ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
             _overlayBtn.Type = _overlayMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
-            if (_fitBtn != null) _fitBtn.Enabled = _overlayMode;
+            if (_fitBtn != null) _fitBtn.Enabled = true;
             if (_webBtn != null) _webBtn.Type = _webMode ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
         }
 
@@ -595,6 +622,145 @@ namespace CameraViewerDotnet
                 try { _slotWebViews[slot].CoreWebView2?.PostWebMessageAsJson("{\"fit\":true}"); } catch { }
             }
             foreach (var pb in _slotBoxes.Values) pb.ResetView();
+        }
+
+        // ==================== History Filmstrip ====================
+
+        private FlowLayoutPanel BuildHistoryBar()
+        {
+            var item = ConfigService.EnsureItem(_id);
+            int count = Math.Clamp(item.historyCount, 4, 10);
+            var bar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = false,
+                FlowDirection = FlowDirection.LeftToRight,
+                BackColor = ThemeManager.Bg,
+                Padding = new Padding(4, 2, 4, 2),
+                Margin = new Padding(0),
+                Visible = _historyEnabled,
+                Height = 56,
+            };
+            // 时间降序 = 最新在左。Queue 自然顺序就是到达顺序，新的进队在尾 → 直接排好，反转显示最新在左
+            for (int i = 0; i < count; i++)
+            {
+                var panel = new InteractiveImagePanel
+                {
+                    Width = 48, Height = 48,
+                    BackColor = ThemeManager.Bg2,
+                    Margin = new Padding(2),
+                    Cursor = Cursors.Hand,
+                };
+                panel.MouseEnter += (s, e) => ShowHistoryPreview(panel);
+                panel.MouseLeave += (s, e) => HideHistoryPreview();
+                bar.Controls.Add(panel);
+                _historyPanels.Add(panel);
+            }
+            return bar;
+        }
+
+        private void ToggleHistoryBar()
+        {
+            _historyEnabled = !_historyEnabled;
+            try
+            {
+                var item = ConfigService.EnsureItem(_id);
+                item.enableHistory = _historyEnabled;
+                ConfigService.SaveCamera();
+            }
+            catch { }
+            if (_historyBar != null) _historyBar.Visible = _historyEnabled;
+            if (_historyBtn != null)
+                _historyBtn.Type = _historyEnabled ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
+        }
+
+        /// <summary>快照：把所有子网格当前画面拼成一张图，入队历史（满了弹出最旧）。</summary>
+        private void AddHistorySnapshot()
+        {
+            var item = ConfigService.EnsureItem(_id);
+            int cap = Math.Clamp(item.historyCount, 4, 10);
+
+            // 把当前子网格 panel 画到位图
+            var src = _subGridPanel;
+            if (src == null || src.IsDisposed || src.Width <= 0 || src.Height <= 0) return;
+            var bmp = new Bitmap(src.Width, src.Height);
+            try
+            {
+                src.DrawToBitmap(bmp, new Rectangle(0, 0, bmp.Width, bmp.Height));
+            }
+            catch { bmp.Dispose(); return; }
+
+            // 入队 + 超上限弹出
+            _historyQueue.Enqueue(bmp);
+            while (_historyQueue.Count > cap && _historyQueue.TryDequeue(out var old)) old?.Dispose();
+
+            // UI 更新（Invoke 到 UI 线程）
+            if (IsDisposed || _historyBar == null) return;
+            try
+            {
+                BeginInvoke(new Action(() => RefreshHistoryBar()));
+            }
+            catch { }
+        }
+
+        private void RefreshHistoryBar()
+        {
+            if (_historyBar == null || IsDisposed) return;
+            // 把 Queue 里的图倒序排列，最新的在左
+            var list = _historyQueue.ToList();
+            // list[0]=最旧，list[last]=最新 → 反转让最新在左
+            list.Reverse();
+            for (int i = 0; i < _historyPanels.Count; i++)
+            {
+                var panel = _historyPanels[i];
+                if (panel.IsDisposed) continue;
+                var old = panel.Image;
+                panel.Image = i < list.Count ? (Bitmap)list[i].Clone() : null;
+                old?.Dispose();
+            }
+        }
+
+        private void ShowHistoryPreview(InteractiveImagePanel panel)
+        {
+            if (panel.Image == null) return;
+            if (_historyPreview == null || _historyPreview.IsDisposed)
+            {
+                _historyPreview = new Form
+                {
+                    StartPosition = FormStartPosition.Manual,
+                    FormBorderStyle = FormBorderStyle.None,
+                    TopMost = true,
+                    ShowInTaskbar = false,
+                    BackColor = Color.Black,
+                    Cursor = Cursors.Default,
+                };
+                var pic = new InteractiveImagePanel { Dock = DockStyle.Fill, BackColor = Color.Black };
+                _historyPreview.Controls.Add(pic);
+            }
+            var p = (InteractiveImagePanel)_historyPreview.Controls[0];
+            var old = p.Image;
+            p.Image = (Bitmap)panel.Image.Clone();
+            old?.Dispose();
+
+            // 鼠标屏幕位置
+            var mp = Cursor.Position;
+            // 窗口居中到鼠标
+            int w = Math.Max(200, Math.Min(600, Screen.PrimaryScreen.Bounds.Width / 3));
+            int h = (int)(w * (float)panel.Image.Height / panel.Image.Width);
+            _historyPreview.Size = new Size(w, h);
+            _historyPreview.Location = new Point(mp.X - w / 2, mp.Y - h / 2 - 10);
+            _historyPreview.Show();
+        }
+
+        private void HideHistoryPreview()
+        {
+            if (_historyPreview == null || _historyPreview.IsDisposed) return;
+            _historyPreview.Hide();
+            var p = (InteractiveImagePanel)_historyPreview.Controls[0];
+            var old = p.Image;
+            p.Image = null;
+            old?.Dispose();
         }
 
         private void EnsureOverlayWebViews()
@@ -959,6 +1125,22 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
         {
             I18n.LanguageChanged -= OnLanguageChanged;
             ThemeManager.ThemeChanged -= ApplyTheme;
+
+            // 历史队列 + 历史条 panel + 悬浮预览窗口
+            HideHistoryPreview();
+            _historyPreview?.Dispose();
+            foreach (var p in _historyPanels)
+            {
+                if (!p.IsDisposed)
+                {
+                    var old = p.Image;
+                    p.Image = null;
+                    old?.Dispose();
+                    p.Dispose();
+                }
+            }
+            _historyPanels.Clear();
+            while (_historyQueue.TryDequeue(out var h)) h?.Dispose();
 
             if (_useSubGrid)
             {

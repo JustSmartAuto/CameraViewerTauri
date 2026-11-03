@@ -36,6 +36,10 @@ namespace CameraViewer
         public List<CellBinding> cellBindings { get; set; } = new List<CellBinding>();
         // CogSocket 子网格显示模式："product"=产品图（默认） | "overlay"=叠加图
         public string viewMode { get; set; } = "product";
+        // 历史图片胶片条开关（仅 CogSocket 子网格模式生效）
+        public bool enableHistory { get; set; } = false;
+        // 历史图片胶片条槽位数：4~10
+        public int historyCount { get; set; } = 6;
     }
 
     public class CameraConfig
@@ -215,6 +219,8 @@ namespace CameraViewer
                         identifierCell = n["identifierCell"]?.GetValue<string>()
                             ?? (n["cellSubscribe"]?.GetValue<string>() ?? "").Split(',').FirstOrDefault()?.Trim() ?? "",
                         viewMode = n["viewMode"]?.GetValue<string>() ?? "product",
+                        enableHistory = n["enableHistory"]?.GetValue<bool>() ?? false,
+                        historyCount = Math.Clamp(n["historyCount"]?.GetValue<int>() ?? 6, 4, 10),
                     };
                     foreach (var b in n["cellBindings"]?.AsArray() ?? new JsonArray())
                     {
