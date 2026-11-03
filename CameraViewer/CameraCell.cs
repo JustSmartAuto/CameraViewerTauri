@@ -368,7 +368,7 @@ namespace CameraViewerDotnet
                 if (_subGridPanel != null) _subGridPanel.Visible = false;
                 foreach (var wv in _slotWebViews.Values) wv.Visible = false;
                 _webView.Visible = true;
-                _root.Controls.SetChildIndex(_webView, 0);
+                _webView.BringToFront();
                 return;
             }
 
@@ -682,6 +682,8 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
             _webView = wv;
             _root.Controls.Add(wv, 0, 1);
             if (_webMode) wv.BringToFront();
+            // 显式触发 CoreWebView2 初始化，避免运行时动态创建（如 CogSocket 子网格"网页"模式）时 Runtime 不自动初始化导致空白
+            _ = wv.EnsureCoreWebView2Async(null);
         }
 
         private void Navigate()
