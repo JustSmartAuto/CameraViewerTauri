@@ -278,8 +278,8 @@ namespace CameraViewerDotnet
             _cogSub = CogSocketManager.Subscribe(item.ip, _identifierCell, OnSubGridResult);
         }
 
-        /// <summary>拍照完成回调（后台线程）：标识取值 → 绑定槽位 → 显示原图。</summary>
-        private void OnSubGridResult(string value, Bitmap bmp)
+        /// <summary>拍照完成回调（后台线程）：标识取值 → 绑定槽位 → 显示图像。先缩略图，原图到达后替换。</summary>
+        private void OnSubGridResult(string value, Bitmap bmp, bool isOriginal)
         {
             int slot;
             if (!_useSubGrid || IsDisposed || bmp == null ||
@@ -291,21 +291,22 @@ namespace CameraViewerDotnet
 
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action(() => ApplySubGridImage(slot, bmp))); }
+                try { BeginInvoke(new Action(() => ApplySubGridImage(slot, bmp, isOriginal))); }
                 catch { bmp.Dispose(); }
             }
             else
             {
-                ApplySubGridImage(slot, bmp);
+                ApplySubGridImage(slot, bmp, isOriginal);
             }
         }
 
-        private void ApplySubGridImage(int slot, Bitmap bmp)
+        private void ApplySubGridImage(int slot, Bitmap bmp, bool isOriginal)
         {
             var pb = _slotBoxes[slot];
             if (IsDisposed || pb.IsDisposed) { bmp?.Dispose(); return; }
-            // 最小槽位（第一次拍照）到达说明是新一轮产品：先清空上一轮所有子网格，避免新旧混显
-            if (slot == _firstSlot) ClearAllSubGrids();
+            // 最小槽位（第一次拍照）缩略图到达说明是新一轮产品：先清空上一轮，避免新旧混显；
+            // 原图补发只替换本槽位，不能再次清空。
+            if (!isOriginal && slot == _firstSlot) ClearAllSubGrids();
             var old = pb.Image;
             pb.Image = bmp;
             old?.Dispose();

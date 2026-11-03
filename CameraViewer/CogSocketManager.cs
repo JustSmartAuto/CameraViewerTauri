@@ -17,8 +17,8 @@ namespace CameraViewer
         private static readonly object Gate = new object();
         private static readonly Dictionary<string, SharedConnection> Pool = new Dictionary<string, SharedConnection>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>订阅一台相机；同一 hostPort 的连接会被复用。</summary>
-        internal static CogSocketSubscription Subscribe(string hostPort, string identifierCell, Action<string, Bitmap> onResult)
+        /// <summary>订阅一台相机；同一 hostPort 的连接会被复用。回调先收到缩略图，随后可能收到原图更新。</summary>
+        internal static CogSocketSubscription Subscribe(string hostPort, string identifierCell, Action<string, Bitmap, bool> onResult)
         {
             var key = CogSocketCamera.NormalizeHostPort(hostPort);
             for (int attempt = 0; attempt < 2; attempt++)
@@ -68,7 +68,7 @@ namespace CameraViewer
             internal SharedConnection(string key) => _key = key;
 
             /// <summary>加入订阅；连接已销毁时返回 null。</summary>
-            internal CogSocketSubscription Add(string identifierCell, Action<string, Bitmap> onResult)
+            internal CogSocketSubscription Add(string identifierCell, Action<string, Bitmap, bool> onResult)
             {
                 var sub = new Subscriber(identifierCell, onResult);
                 lock (_subscribers)
@@ -133,7 +133,7 @@ namespace CameraViewer
             }
 
             /// <summary>把一次拍照结果分发给关注该标识单元格的订阅者；位图所有权随回调转移。</summary>
-            private void OnCellResult(string identifierCell, string value, Bitmap bmp)
+            private void OnCellResult(string identifierCell, string value, Bitmap bmp, bool isOriginal)
             {
                 Subscriber[] targets;
                 lock (_subscribers) targets = _subscribers.Where(s => s.IdentifierCell == identifierCell).ToArray();
@@ -141,7 +141,7 @@ namespace CameraViewer
 
                 if (targets.Length == 1)
                 {
-                    try { targets[0].OnResult(value, bmp); } catch { bmp.Dispose(); }
+                    try { targets[0].OnResult(value, bmp, isOriginal); } catch { bmp.Dispose(); }
                     return;
                 }
                 foreach (var t in targets)
@@ -150,7 +150,7 @@ namespace CameraViewer
                     try
                     {
                         copy = (Bitmap)bmp.Clone();
-                        t.OnResult(value, copy);
+                        t.OnResult(value, copy, isOriginal);
                     }
                     catch { copy?.Dispose(); }
                 }
@@ -160,9 +160,9 @@ namespace CameraViewer
             private sealed class Subscriber
             {
                 internal readonly string IdentifierCell;   // 归一化后的单元格名
-                internal readonly Action<string, Bitmap> OnResult;
+                internal readonly Action<string, Bitmap, bool> OnResult;
 
-                internal Subscriber(string identifierCell, Action<string, Bitmap> onResult)
+                internal Subscriber(string identifierCell, Action<string, Bitmap, bool> onResult)
                 {
                     IdentifierCell = CogSocketCamera.NormalizeCell(identifierCell);
                     OnResult = onResult;

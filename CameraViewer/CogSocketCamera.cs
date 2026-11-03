@@ -43,8 +43,11 @@ namespace CameraViewer
         /// <summary>需要关注的拍照标识单元格集合（如 A21），其取值（11/21/31/41…）标识第几次拍照。</summary>
         private readonly HashSet<string> _identifierCells;
 
-        /// <summary>一次拍照完成：标识单元格名 + 取值 + 本次拍照原图。回调在后台线程，位图由接收方接管释放。</summary>
-        public event Action<string, string, Bitmap> CellResult;
+        /// <summary>每个标识单元格最近一次已显示的图像地址，用于丢弃“同一张图 + 旧取值”的滞后事件。</summary>
+        private readonly ConcurrentDictionary<string, string> _lastImageByCell = new();
+
+        /// <summary>一次拍照完成：标识单元格名 + 取值 + 图像 + 是否原图。先发 640 缩略图，原图取到后再补发一次。</summary>
+        public event Action<string, string, Bitmap, bool> CellResult;
 
         public string IpPort { get; }
         public bool IsConnected => _ws?.State == WebSocketState.Open;
@@ -301,60 +304,97 @@ namespace CameraViewer
 
         private void OnResultChanged(JsonElement hmiResult)
         {
-            // Fire-and-forget: HTTP download + image decode on thread pool
+            // 1. 找出本次结果中所有已订阅的拍照标识单元格及其取值（一台相机可被多个 Cell 共享）
+            var matches = new List<(string Cell, string Value, string ImageUrl)>();
+            if (hmiResult.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var cell in cells.EnumerateArray())
+                {
+                    var loc = cell.TryGetProperty("location", out var l) ? l.GetString()
+                            : cell.TryGetProperty("name", out var n) ? n.GetString() : null;
+                    var norm = NormalizeCell(loc);
+                    if (norm.Length == 0 || !_identifierCells.Contains(norm)) continue;
+                    var value = ExtractCellValue(cell);
+                    if (string.IsNullOrEmpty(value)) continue;
+                    matches.Add((norm, value.Trim(), ExtractCellImageUrl(cell)));
+                }
+            }
+            if (matches.Count == 0)
+            {
+                _ = SendReadyAsync();
+                return;
+            }
+
+            var main = GetMainImage(hmiResult);
+
+            // 2. Fire-and-forget：先取 640 缩略图尽快落图，原图在后台补取（失败则保留缩略图）
             _ = Task.Run(async () =>
             {
-                Bitmap mainBmp = null;
+                var originals = new List<(string Cell, string Value, string Url)>();
                 try
                 {
-                    // 1. 找出本次结果中所有已订阅的拍照标识单元格及其取值（一台相机可被多个 Cell 共享）
-                    var matches = new List<(string Cell, string Value, string ImageUrl)>();
-                    if (hmiResult.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var cell in cells.EnumerateArray())
-                        {
-                            var loc = cell.TryGetProperty("location", out var l) ? l.GetString()
-                                    : cell.TryGetProperty("name", out var n) ? n.GetString() : null;
-                            var norm = NormalizeCell(loc);
-                            if (norm.Length == 0 || !_identifierCells.Contains(norm)) continue;
-                            var value = ExtractCellValue(cell);
-                            if (string.IsNullOrEmpty(value)) continue;
-                            matches.Add((norm, value.Trim(), ExtractCellImageUrl(cell)));
-                        }
-                    }
-                    if (matches.Count == 0) return;
-
-                    // 2. 取原图（不缩放）：标识单元格自带图像地址时优先，否则共用主采集视图原图
                     foreach (var m in matches)
                     {
-                        Bitmap bmp = null;
-                        if (!string.IsNullOrEmpty(m.ImageUrl))
-                            bmp = await FetchImageAsync(m.ImageUrl);
-                        if (bmp == null)
-                        {
-                            mainBmp ??= await DecodeMainImageAsync(hmiResult);
-                            if (mainBmp != null)
-                            {
-                                try { bmp = (Bitmap)mainBmp.Clone(); } catch { bmp = null; }
-                            }
-                        }
-                        if (bmp == null) continue;
+                        var url = !string.IsNullOrEmpty(m.ImageUrl) ? m.ImageUrl : main.Url;
+                        if (string.IsNullOrEmpty(url)) continue;
 
-                        // 3. 交给订阅者按其绑定槽位显示；位图所有权转移给回调
-                        var handler = CellResult;
-                        if (handler == null) { bmp.Dispose(); continue; }
-                        try { handler(m.Cell, m.Value, bmp); }
-                        catch { bmp.Dispose(); }
+                        // 相机一次拍照会连发两个事件：先“新图+旧取值”，后“旧图+新取值”。
+                        // 同一标识单元格重复收到同一张图时直接丢弃，避免把上一次拍照的图填进新槽位。
+                        var last = _lastImageByCell.TryGetValue(m.Cell, out var prev) ? prev : null;
+                        if (url != last) _lastImageByCell[m.Cell] = url;
+                        else if (!url.StartsWith("data:")) continue;
+
+                        Bitmap bmp = null;
+                        if (!url.StartsWith("data:"))
+                            bmp = await FetchImageAsync(ThumbnailUrl(url, main.Width, main.Height));
+                        if (bmp == null) bmp = await FetchImageAsync(url);   // 缩略图失败时退回原图
+
+                        if (bmp != null) Dispatch(m.Cell, m.Value, bmp, false);
+                        if (!url.StartsWith("data:")) originals.Add((m.Cell, m.Value, url));
                     }
                 }
                 catch { }
                 finally
                 {
-                    mainBmp?.Dispose();
-                    // MUST send ready so camera pushes next frame (Python worker.py L138 comment)
-                    try { await RequestAsync("post", $"{_sessionId}/ready", "", CancellationToken.None); } catch { }
+                    // 发完缩略图立即 ready，让相机尽快推送下一帧；原图下载不阻塞取图
+                    await SendReadyAsync();
+                }
+
+                foreach (var o in originals)
+                {
+                    Bitmap bmp = null;
+                    try { bmp = await FetchImageAsync(o.Url); } catch { }
+                    if (bmp != null) Dispatch(o.Cell, o.Value, bmp, true);
                 }
             });
+        }
+
+        private async Task SendReadyAsync()
+        {
+            // MUST send ready so camera pushes next frame (Python worker.py L138 comment)
+            try { await RequestAsync("post", $"{_sessionId}/ready", "", CancellationToken.None); } catch { }
+        }
+
+        /// <summary>交付图像给订阅者；位图所有权随回调转移，isOriginal 表示这是后台补取的原图。</summary>
+        private void Dispatch(string cell, string value, Bitmap bmp, bool isOriginal)
+        {
+            var handler = CellResult;
+            if (handler == null) { bmp.Dispose(); return; }
+            try { handler(cell, value, bmp, isOriginal); }
+            catch { bmp.Dispose(); }
+        }
+
+        /// <summary>640 宽缩略图地址（服务器按 BMP 返回；不指定高度时由服务器保持宽高比）。</summary>
+        private static string ThumbnailUrl(string url, int width, int height)
+        {
+            if (url.Contains("sz=")) return url;
+            var sep = url.Contains('?') ? "&" : "?";
+            if (width > 0 && height > 0)
+            {
+                var th = Math.Max(1, (int)Math.Round(640.0 * height / width));
+                return $"{url}{sep}sz=640,{th}";
+            }
+            return $"{url}{sep}sz=640,h";
         }
 
         /// <summary>HmiResult.cells[] 取值：优先 value，其次 data。</summary>
@@ -388,19 +428,22 @@ namespace CameraViewer
             return url != null && (url.StartsWith("/") || url.StartsWith("http") || url.StartsWith("data:")) ? url : null;
         }
 
-        private async Task<Bitmap> DecodeMainImageAsync(JsonElement hmiResult)
+        /// <summary>取主采集视图的 ImageLayer 地址与原始尺寸（用于生成等比缩略图参数）。</summary>
+        private static (string Url, int Width, int Height) GetMainImage(JsonElement hmiResult)
         {
-            if (!hmiResult.TryGetProperty("acqImageView", out var acq)) return null;
-            if (!acq.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array) return null;
+            if (!hmiResult.TryGetProperty("acqImageView", out var acq)) return (null, 0, 0);
+            if (!acq.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array) return (null, 0, 0);
             foreach (var layer in layers.EnumerateArray())
             {
                 var type = layer.TryGetProperty("$type", out var t) ? t.GetString() : null;
                 if (type != "ImageLayer") continue;
                 var url = layer.TryGetProperty("url", out var u) ? u.GetString() : null;
-                if (!string.IsNullOrEmpty(url))
-                    return await FetchImageAsync(url);   // 原图，不做 ?sz= 缩放
+                if (string.IsNullOrEmpty(url)) continue;
+                var w = layer.TryGetProperty("width", out var wEl) && wEl.ValueKind == JsonValueKind.Number ? wEl.GetInt32() : 0;
+                var h = layer.TryGetProperty("height", out var hEl) && hEl.ValueKind == JsonValueKind.Number ? hEl.GetInt32() : 0;
+                return (url, w, h);
             }
-            return null;
+            return (null, 0, 0);
         }
 
         private async Task<Bitmap> FetchImageAsync(string url)

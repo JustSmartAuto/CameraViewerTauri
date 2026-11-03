@@ -15,18 +15,19 @@
 | 方式 | 说明 | 渲染 |
 |---|---|---|
 | **Http** | 康耐视 In-Sight、海康等 HTTP HMI 网页相机 | WebView2 内嵌加载 HMI 页面 |
-| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）→ PictureBox 子网格，每次拍照按标识取值把原图填到对应槽位；配置不完整时显示提示，**不回退 HTTP HMI** |
+| **CogSocket** | Cognex In-Sight WebSocket（ws://host:port/ws），订阅 `resultChanged` 事件获取 HmiResult | 配置 `subGridCount > 1` + `identifierCell`（拍照标识单元格）+ `cellBindings`（取值→槽位）→ PictureBox 子网格，每次拍照先填 640 宽缩略图、后台再补原图；配置不完整时显示提示，**不回退 HTTP HMI** |
 | **GigE** | GigE Vision 相机（仅保存序列号 / 曝光配置） | 原生取流未接入；设置页不提供 URL 输入，单元格暂无画面（若沿用旧配置的 `ip` 则按 WebView2 加载） |
 
 ### CogSocket 子网格拆分（多面产品场景）
 
 - 相机设置里选 `conn = CogSocket`，输入 IP:Port
-- **`identifierCell`**：拍照标识单元格地址（如 `A21`），其取值 `11` / `21` / `31` / `41` 分别表示第 1~4 次拍照
+- **`identifierCell`**：拍照标识单元格地址（如 `A27` 条件号），其取值 `11` / `21` / `31` / `41` 分别表示第 1~4 次拍照
 - **`subGridCount`**：下拉选择 `[1, 2, 4, 6, 8]`（对应 1×1 / 2×1 / 2×2 / 3×2 / 4×2 布局）
-- **`cellBindings`**：每个槽位填一个标识取值，值到达即把该次拍照的**原图**填入对应槽位；槽位号与子网格位置一一对应
+- **`cellBindings`**：每个槽位填一个标识取值，值到达即把该次拍照的缩略图填入对应槽位，原图取到后再替换；槽位号与子网格位置一一对应
 - 每个槽位左上角显示绑定的标识取值（未绑定时显示 `#槽位号`）
 - 仅当 `conn=cogsocket`、`subGridCount>1`、`identifierCell` 非空且至少有一个绑定值时才会启用子网格模式；配置不完整时单元格显示提示，**不回退 HTTP HMI 页面**
 - 标识单元格若为数值单元格（`HmiFloatResult`，如 A27 条件号返回 `41.0`），绑定值会先归一化为整数再匹配（`41.0 → 41`）
+- 相机一次拍照会连发“新图+旧取值”“旧图+新取值”两个 `resultChanged` 事件；按标识单元格记录最近图像地址，同一张图的滞后事件直接丢弃，避免把上一张图填进新槽位
 - 最小槽位对应的取值到达时视为新一轮产品，**先清空所有子网格**，避免新旧产品图片混淆
 - 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
@@ -35,7 +36,7 @@
 
 - 相同 `IP:Port` 的多个 CameraCell 共用 `CogSocketManager` 中的一条 WebSocket（引用计数，最后一个 Cell 释放后自动关闭）
 - 连接按所有订阅者的 `identifierCell` 并集执行 `openSession`；新增标识单元格时自动重连补齐 session
-- 每次拍照结果到达后按标识单元格分发给订阅者，各 Cell 再执行 `cellValue → slot`（如 `11 → 槽位 1`）；多个 Cell 共用同一张原图时各自持有位图副本
+- 每次拍照结果到达后按标识单元格分发给订阅者，各 Cell 再执行 `cellValue → slot`（如 `11 → 槽位 1`）；**先发 640 宽缩略图保证及时显示**，`ready` 后在后台补取原图，成功则原位替换，失败保留缩略图；多个 Cell 共用同一张图时各自持有位图副本
 - 顶部刷新按钮只会重建该相机的共享连接，同相机的其他 Cell 会自动恢复接收
 
 ### 网格布局
@@ -89,9 +90,10 @@ WebSocket 握手  ws://host:80/ws（未写端口默认 80；连接失败自动�
   ↓ keepAlive loop 每 15s 发 POST {sid}/keepAlive
   ↓ 收 event → 从 cells[] 找 identifierCell 的取值（11/21/31/41…）
   ↓           → 取图像地址（标识单元格 data / acqImageView.layers[].url / data: base64）
-  ↓           → HTTP GET 原图（不带 sz 参数，不做缩放）
+  ↓           → HTTP GET 缩略图 ?sz=640,<等比高>  → 立即解码显示
   ↓ 解码 Bitmap → 按取值绑定的槽位填入 PictureBox.Image (BeginInvoke 切 UI 线程)
-  ↓ 必须在回调末尾发 POST {sid}/ready  ← 让相机推下一帧（否则只推一帧就停）
+  ↓ 先发 POST {sid}/ready  ← 让相机推下一帧（否则只推一帧就停）
+  ↓ 后台再 HTTP GET 原图（不带 sz，不缩放）→ 成功则替换缩略图，失败保持缩略图
 ```
 
 ### 文件中转架构（复刻自 CameraHelperLens）
