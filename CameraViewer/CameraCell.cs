@@ -10,6 +10,155 @@ using Panel = System.Windows.Forms.Panel;
 
 namespace CameraViewerDotnet
 {
+    /// <summary>
+    /// 可交互图像面板：替代 PictureBox，支持滚轮缩放（以鼠标为中心）+ 鼠标拖动平移。
+    /// Zoom=1 时自动 fit 到槽位（等比缩放居中），与叠加图 WebView2 的产品图行为一致。
+    /// </summary>
+    internal sealed class InteractiveImagePanel : Panel
+    {
+        private Bitmap _image;
+        private float _zoom = 1f;
+        private float _offsetX;
+        private float _offsetY;
+        private bool _dragging;
+        private Point _dragStart;
+        private float _offStartX, _offStartY;
+
+        public InteractiveImagePanel()
+        {
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.UserPaint, true);
+            Cursor = Cursors.Default;
+        }
+
+        /// <summary>显示的图像；设置后自动 ResetView。</summary>
+        public Bitmap Image
+        {
+            get => _image;
+            set
+            {
+                var old = _image;
+                _image = value;
+                ResetView();
+                old?.Dispose();
+            }
+        }
+
+        /// <summary>Zoom=1 为 fit；允许 0.1 ~ 20。</summary>
+        public float Zoom => _zoom;
+
+        public float OffsetX => _offsetX;
+        public float OffsetY => _offsetY;
+
+        /// <summary>重置到 fit 居中（zoom=1，无偏移）。</summary>
+        public void ResetView()
+        {
+            _zoom = 1f;
+            _offsetX = 0f;
+            _offsetY = 0f;
+            Cursor = Cursors.Default;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+
+            if (_image == null) return;
+
+            float baseScale = Math.Min((float)ClientSize.Width / _image.Width,
+                                       (float)ClientSize.Height / _image.Height);
+            if (baseScale <= 0) baseScale = 1f;
+            float scale = baseScale * _zoom;
+            float drawW = _image.Width * scale;
+            float drawH = _image.Height * scale;
+            float x = (ClientSize.Width - drawW) / 2f + _offsetX;
+            float y = (ClientSize.Height - drawH) / 2f + _offsetY;
+
+            g.DrawImage(_image, new RectangleF(x, y, drawW, drawH));
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (_image == null) { base.OnMouseWheel(e); return; }
+            float baseScale = Math.Min((float)ClientSize.Width / _image.Width,
+                                       (float)ClientSize.Height / _image.Height);
+            if (baseScale <= 0) baseScale = 1f;
+
+            float s0 = baseScale * _zoom;
+            float nz = Math.Max(0.1f, Math.Min(20f, _zoom * (float)Math.Exp(-e.Delta * 0.0015)));
+            if (Math.Abs(nz - _zoom) < 0.0001f) return;
+            float ns = baseScale * nz;
+
+            // 鼠标相对于面板中心的偏移
+            float cx = e.X - ClientSize.Width / 2f - _offsetX;
+            float cy = e.Y - ClientSize.Height / 2f - _offsetY;
+            // 保持鼠标指向同一图像像素：偏移量按新旧缩放比缩放
+            _offsetX = e.X - ClientSize.Width / 2f - cx * (ns / s0);
+            _offsetY = e.Y - ClientSize.Height / 2f - cy * (ns / s0);
+            _zoom = nz;
+
+            base.OnMouseWheel(e);
+            Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && _image != null)
+            {
+                _dragging = true;
+                _dragStart = e.Location;
+                _offStartX = _offsetX;
+                _offStartY = _offsetY;
+                Cursor = Cursors.Hand;
+            }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_dragging)
+            {
+                _offsetX = _offStartX + (e.X - _dragStart.X);
+                _offsetY = _offStartY + (e.Y - _dragStart.Y);
+                Invalidate();
+            }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (_dragging)
+            {
+                _dragging = false;
+                Cursor = Cursors.Default;
+            }
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (_dragging)
+            {
+                _dragging = false;
+                Cursor = Cursors.Default;
+            }
+            base.OnMouseLeave(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _image?.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
     public class CameraCell : Panel
     {
         private readonly int _id;
@@ -36,7 +185,7 @@ namespace CameraViewerDotnet
         private readonly string _identifierCell;                      // 拍照标识单元格（如 A21）
         private readonly List<CellBinding> _bindings;                 // 标识取值 → 槽位
         private readonly Dictionary<string, int> _valueToSlot = new Dictionary<string, int>();
-        private readonly Dictionary<int, PictureBox> _slotBoxes = new Dictionary<int, PictureBox>();
+        private readonly Dictionary<int, InteractiveImagePanel> _slotBoxes = new Dictionary<int, InteractiveImagePanel>();
         private int _firstSlot = -1;   // 最小绑定槽位：该槽位拍照到达时表示新一轮开始，先清空所有子网格
         private readonly TableLayoutPanel _subGridPanel;
         private Panel _placeholderHost;
@@ -229,12 +378,10 @@ namespace CameraViewerDotnet
 
             for (int i = 0; i < cols * rows; i++)
             {
-                var pb = new PictureBox
+                var pb = new InteractiveImagePanel
                 {
                     Dock = DockStyle.Fill,
                     BackColor = ThemeManager.Bg,
-                    SizeMode = PictureBoxSizeMode.Zoom,
-                    BorderStyle = BorderStyle.None,
                     Margin = new Padding(1),
                 };
                 // Label overlay: 显示绑定的拍照标识取值（如 11/21/31/41），未绑定时显示槽位号
@@ -399,7 +546,7 @@ namespace CameraViewerDotnet
             if (IsDisposed || _subGridPanel == null) return;
             foreach (Control c in _subGridPanel.Controls)
             {
-                if (c is PictureBox pb)
+                if (c is InteractiveImagePanel pb)
                 {
                     var old = pb.Image;
                     pb.Image = null;
@@ -439,7 +586,7 @@ namespace CameraViewerDotnet
             catch { }
         }
 
-        /// <summary>适合：把所有叠加视图的缩放/平移复位为槽位适配。</summary>
+        /// <summary>适合：把所有叠加视图 WebView2 与产品图 InteractiveImagePanel 的缩放/平移都复位为槽位适配。</summary>
         private void FitOverlayViews()
         {
             foreach (var slot in _slotWebViews.Keys)
@@ -447,6 +594,7 @@ namespace CameraViewerDotnet
                 if (!_slotWebViewReady.Contains(slot)) continue;
                 try { _slotWebViews[slot].CoreWebView2?.PostWebMessageAsJson("{\"fit\":true}"); } catch { }
             }
+            foreach (var pb in _slotBoxes.Values) pb.ResetView();
         }
 
         private void EnsureOverlayWebViews()
@@ -524,19 +672,19 @@ namespace CameraViewerDotnet
         }
 
         /// <summary>叠加图 HTML：图像与 SVG 按原始像素坐标等比缩放居中，与产品图 Zoom 行为一致。
-        /// 使用单一 #fit 容器承载图像与 SVG 叠加层，通过 CSS width/height/left/top 控制位置与缩放。
-        /// 关键：#im/#sv 与注入的 SVG root 必须 pointer-events:none，避免它们拦截 wheel/pointer 事件
-        /// 导致滚轮缩放和拖动平移失效。
+        /// 使用单一 #fit 容器承载产品图（div+background-image）与 SVG 叠加层，通过 CSS width/height/left/top 控制位置与缩放。
+        /// 关键：#im/#sv 与注入的 SVG root 必须 pointer-events:none，避免它们拦截 wheel/pointer 事件。
+        /// 产品图用 background-size:100% 100% 拉伸，与 SVG 的 preserveAspectRatio:none 完美对齐。
         /// </summary>
         private const string OverlayHtml = @"<!doctype html><html><head><meta charset=""utf-8""><style>
 html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none;touch-action:none;cursor:grab}
 *{box-sizing:border-box}
 #fit{position:absolute;left:0;top:0}
 #im,#sv{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
-#im{display:block;object-fit:fill;-webkit-user-drag:none}
+#im{background-size:100% 100%;background-position:0 0;background-repeat:no-repeat;background-image:none}
 #sv svg{pointer-events:none}
 </style></head><body>
-<div id=""fit""><img id=""im""><div id=""sv""></div></div>
+<div id=""fit""><div id=""im""></div><div id=""sv""></div></div>
 <script>
 (function(){
  var fit=document.getElementById('fit'), im=document.getElementById('im'), sv=document.getElementById('sv');
@@ -558,14 +706,11 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
    var nz=Math.max(0.1, Math.min(20, zoom*Math.exp(-e.deltaY*0.0015)));
    if(nz===zoom) return;
    var s0=baseScale()*zoom, ns=baseScale()*nz;
-   // fit 中心 = (innerW/2+panX, innerH/2+panY)，cx/cy 是鼠标相对于 fit 中心的偏移
    var cx=e.clientX-window.innerWidth/2-panX, cy=e.clientY-window.innerHeight/2-panY;
-   // 保持鼠标指向同一图像像素：偏移量按新旧缩放比缩放
    panX=e.clientX-window.innerWidth/2-cx*(ns/s0);
    panY=e.clientY-window.innerHeight/2-cy*(ns/s0);
    zoom=nz; layout();
  },{passive:false});
- // 鼠标拖动平移
  var drag=false, lx=0, ly=0;
  document.addEventListener('pointerdown',function(e){
    if(e.button!==0) return;
@@ -583,10 +728,10 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
  document.addEventListener('dragstart',function(e){ e.preventDefault(); });
  window.chrome.webview.addEventListener('message',function(e){
    var d=e.data||{};
-   if(d.clear){ im.removeAttribute('src'); sv.replaceChildren(); return; }
+   if(d.clear){ im.style.backgroundImage='none'; sv.replaceChildren(); return; }
    if(d.fit){ reset(); return; }
    if(d.w>0&&d.h>0){ W=d.w; H=d.h; }
-   if(d.img){ im.src=d.img; }
+   if(d.img){ im.style.backgroundImage='url(""+d.img+"")'; }
    if(d.svg){
      try{
        var doc=new DOMParser().parseFromString(d.svg,'image/svg+xml');
@@ -754,7 +899,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
                 _subGridPanel.BackColor = ThemeManager.Bg2;
                 foreach (Control c in _subGridPanel.Controls)
                 {
-                    if (c is PictureBox pb) pb.BackColor = ThemeManager.Bg;
+                    if (c is InteractiveImagePanel pb) pb.BackColor = ThemeManager.Bg;
                 }
             }
         }
@@ -822,12 +967,12 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
                     _cogSub.Dispose();
                     _cogSub = null;
                 }
-                // Dispose any PictureBox images
+                // Dispose any InteractiveImagePanel images
                 if (_subGridPanel != null)
                 {
                     foreach (Control c in _subGridPanel.Controls)
                     {
-                        if (c is PictureBox pb)
+                        if (c is InteractiveImagePanel pb)
                         {
                             var old = pb.Image;
                             pb.Image = null;
