@@ -172,6 +172,7 @@ namespace CameraViewerDotnet
         private readonly AntdUI.Button _fitBtn;       // 适合：叠加视图复位为槽位适配尺寸
         private readonly AntdUI.Button _webBtn;       // 网页：隐藏子网格，整格显示 HTTP HMI
         private AntdUI.Button _historyBtn;             // 历史胶片条开关
+        private AntdUI.TooltipComponent _tooltip;      // 图标按钮悬浮提示（仅子网格模式创建）
         private readonly Panel _top;
 
         // WebView2 path: http / gige / cogsocket-subGrid==1；CogSocket 子网格的“网页”模式按需创建
@@ -278,21 +279,26 @@ namespace CameraViewerDotnet
             int col = 2;
             if (_useSubGrid)
             {
+                _tooltip = new AntdUI.TooltipComponent();
                 int iconBtnW = 32;
                 _productBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Picture), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _productBtn.Click += (s, e) => SetOverlayMode(false);
+                _tooltip.SetTip(_productBtn, I18n.T("productImage"));
                 topGrid.Controls.Add(_productBtn, col++, 0);
 
                 _overlayBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Fullscreen), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _overlayBtn.Click += (s, e) => SetOverlayMode(true);
+                _tooltip.SetTip(_overlayBtn, I18n.T("overlayImage"));
                 topGrid.Controls.Add(_overlayBtn, col++, 0);
 
                 _fitBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Expand), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _fitBtn.Click += (s, e) => FitOverlayViews();
+                _tooltip.SetTip(_fitBtn, I18n.T("fitView"));
                 topGrid.Controls.Add(_fitBtn, col++, 0);
 
                 _webBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.Global), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _webBtn.Click += (s, e) => SetViewMode("web");
+                _tooltip.SetTip(_webBtn, I18n.T("webView"));
                 topGrid.Controls.Add(_webBtn, col++, 0);
 
                 // 历史按钮（仅 CogSocket 子网格模式可见）
@@ -301,6 +307,7 @@ namespace CameraViewerDotnet
                 _historyBtn = new AntdUI.Button { Text = "", IconSvg = AntIcon.Svg(AntIcon.History), Width = iconBtnW, Height = 26, Margin = new Padding(2, 0, 0, 0), DefaultBorderColor = ThemeManager.BtnBorder, BorderWidth = 1 };
                 _historyBtn.Type = _historyEnabled ? AntdUI.TTypeMini.Primary : AntdUI.TTypeMini.Default;
                 _historyBtn.Click += (s, e) => ToggleHistoryBar();
+                _tooltip.SetTip(_historyBtn, I18n.T("history"));
                 topGrid.Controls.Add(_historyBtn, col++, 0);
             }
 
@@ -1040,10 +1047,15 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
             UpdateMaxBtn();
             _refreshBtn.Text = I18n.T("refresh");
             _refreshBtn.IconSvg = AntIcon.Svg(AntIcon.Reload);
-            if (_productBtn != null) _productBtn.Text = I18n.T("productImage");
-            if (_overlayBtn != null) _overlayBtn.Text = I18n.T("overlayImage");
-            if (_fitBtn != null) _fitBtn.Text = I18n.T("fitView");
-            if (_webBtn != null) _webBtn.Text = I18n.T("webView");
+            // 图标按钮无文字，悬浮提示跟随语言切换
+            if (_tooltip != null)
+            {
+                if (_productBtn != null) _tooltip.SetTip(_productBtn, I18n.T("productImage"));
+                if (_overlayBtn != null) _tooltip.SetTip(_overlayBtn, I18n.T("overlayImage"));
+                if (_fitBtn != null) _tooltip.SetTip(_fitBtn, I18n.T("fitView"));
+                if (_webBtn != null) _tooltip.SetTip(_webBtn, I18n.T("webView"));
+                if (_historyBtn != null) _tooltip.SetTip(_historyBtn, I18n.T("history"));
+            }
             var conn = ConfigService.NormalizeConn(ConfigService.EnsureItem(_id).conn);
             _urlBox.PlaceholderText = conn == "cogsocket" ? I18n.T("connPlaceholder") : I18n.T("urlPlaceholder");
             _remarkBox.PlaceholderText = I18n.T("remarkPlaceholder");
@@ -1125,6 +1137,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-selec
         {
             I18n.LanguageChanged -= OnLanguageChanged;
             ThemeManager.ThemeChanged -= ApplyTheme;
+            _tooltip?.Dispose();
 
             // 历史队列 + 历史条 panel + 悬浮预览窗口
             HideHistoryPreview();
