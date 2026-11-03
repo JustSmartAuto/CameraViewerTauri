@@ -23,10 +23,10 @@ namespace CameraViewer
     /// </summary>
     public class CogSocketCamera : IDisposable
     {
-        private readonly int _port;
+        private int _port;
+        private readonly bool _portExplicit;
         private readonly string _username;
         private readonly string _password;
-        private readonly Uri _wsUri;
         private readonly HttpClient _http;
 
         private ClientWebSocket _ws;
@@ -51,29 +51,49 @@ namespace CameraViewer
 
         public CogSocketCamera(string hostPort, IEnumerable<string> identifierCells, string username = "admin", string password = "")
         {
-            var hp = NormalizeHostPort(hostPort);
+            var raw = (hostPort ?? "").Trim();
+            _portExplicit = raw.Contains(':');
+            var hp = NormalizeHostPort(raw);
             IpPort = hp;
             var parts = hp.Split(':');
             _host = parts[0];
-            _port = int.TryParse(parts[1], out var p) ? p : 8087;
+            _port = int.TryParse(parts[1], out var p) ? p : 80;
             _identifierCells = new HashSet<string>(
                 (identifierCells ?? Enumerable.Empty<string>())
                     .Select(NormalizeCell)
                     .Where(c => c.Length > 0));
             _username = username;
             _password = password;
-            _wsUri = new Uri($"ws://{_host}:{_port}/ws");
             // 原图可能十几 MB，下载超时放宽
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _http.DefaultRequestHeaders.Add("User-Agent", "CameraViewerDotnet");
         }
 
-        /// <summary>hostPort 归一化：未写端口时补 8087（共享连接以此为键）。</summary>
+        /// <summary>hostPort 归一化：未写端口时默认 80（固件 22.2+ 固定 80；更早固件用 8087，连接时自动回退）。</summary>
         public static string NormalizeHostPort(string hostPort)
         {
             var hp = (hostPort ?? "").Trim();
-            if (!hp.Contains(':')) hp += ":8087";
+            if (!hp.Contains(':')) hp += ":80";
             return hp;
+        }
+
+        /// <summary>优先用配置端口；连接失败时在 80（固件 22.2+）与 8087（早期固件）之间回退。</summary>
+        private IEnumerable<int> PortsToTry()
+        {
+            yield return _port;
+            if (_port == 80) yield return 8087;
+            else if (_port == 8087) yield return 80;
+        }
+
+        /// <summary>openSession 的 cellNames 需为范围形式：A21 → A21:A21（否则固件返回空 cells）。</summary>
+        private static string ToCellRange(string cell)
+        {
+            var v = (cell ?? "").Trim();
+            if (v.Length == 0 || v.Contains(':')) return v;
+            var bare = v.Replace("$", "");
+            return System.Text.RegularExpressions.Regex.IsMatch(bare, "^[A-Za-z]+[0-9]+$")
+                ? bare + ":" + bare
+                : v;   // 单元格名保持原样
         }
 
         /// <summary>单元格地址归一化：忽略大小写、$ 包裹与空白（A21 / $A$21）。</summary>
@@ -88,8 +108,25 @@ namespace CameraViewer
         public async Task ConnectAsync(IEnumerable<string> cellNames, CancellationToken ct = default)
         {
             _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            _ws = new ClientWebSocket();
-            await _ws.ConnectAsync(_wsUri, _cts.Token);
+            Exception lastError = null;
+            foreach (var port in PortsToTry())
+            {
+                _port = port;
+                _ws = new ClientWebSocket();
+                try
+                {
+                    await _ws.ConnectAsync(new Uri($"ws://{_host}:{port}/ws"), _cts.Token);
+                    lastError = null;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    try { _ws.Dispose(); } catch { }
+                    _ws = null;
+                }
+            }
+            if (_ws == null) throw lastError ?? new CogSocketException(-1, $"无法连接 {_host}");
             _readLoop = Task.Run(() => ReadLoopAsync(_cts.Token), _cts.Token);
 
             // 1. hello (optional, old firmware may reject — non-fatal)
@@ -98,11 +135,12 @@ namespace CameraViewer
             // 2. detect root
             _root = await DetectRootAsync(_cts.Token);
 
-            // 3. openSession
+            // 3. openSession（固件只识别范围形式，单地址需转成 A21:A21）
             var body = new Dictionary<string, object>
             {
                 ["$type"] = "HmiSessionInfo",
-                ["cellNames"] = (cellNames?.ToList() ?? new List<string>()),
+                ["cellNames"] = (cellNames ?? Enumerable.Empty<string>())
+                    .Select(ToCellRange).Where(s => s.Length > 0).ToList(),
             };
             var sidResp = await RequestAsync("post", $"{_root}/openSession", body, _cts.Token);
             _sessionId = sidResp.ValueKind == JsonValueKind.String ? sidResp.GetString() : sidResp.ToString();

@@ -111,7 +111,7 @@ namespace CameraViewer
             ["subGridCount"] = new[] { "子网格数量:", "Sub-grid count:" },
             ["subGridSlot"] = new[] { "子网格", "Sub-grid" },
             ["subGridValuePlaceholder"] = new[] { "拍照值 如 11", "Shot value, e.g. 11" },
-            ["connPlaceholder"] = new[] { "192.168.1.10:8087", "192.168.1.10:8087" },
+            ["connPlaceholder"] = new[] { "192.168.1.10:80", "192.168.1.10:80" },
             ["cogSocketNotConfigured"] = new[] { "CogSocket 模式尚未配置完整：请在设置中填写拍照标识单元格、子网格数量（>1）及槽位取值绑定", "CogSocket mode is not configured: set the trigger cell, sub-grid count (>1) and slot bindings in Settings" },
             ["transitFolderSplit"] = new[] { "文件夹部分隔符:", "Folder part splitter:" },
             ["transitFileSplit"] = new[] { "文件名部分隔符:", "FileName part splitter:" },

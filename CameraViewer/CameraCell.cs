@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 using AntdUI;
@@ -191,7 +192,7 @@ namespace CameraViewerDotnet
             foreach (var b in _bindings)
             {
                 if (b.slotIndex < 0 || b.slotIndex >= _subGridCount || slotValue.ContainsKey(b.slotIndex)) continue;
-                var v = b.value.Trim();
+                var v = NormalizeShotValue(b.value);
                 slotValue[b.slotIndex] = v;
                 _valueToSlot[v] = b.slotIndex;
             }
@@ -224,6 +225,19 @@ namespace CameraViewerDotnet
                     _slotBoxes[i] = pb;
             }
             return panel;
+        }
+
+        /// <summary>拍照值归一化：相机 float 单元格返回 "41.0"，统一为 "41" 以便匹配绑定值。</summary>
+        private static string NormalizeShotValue(string value)
+        {
+            var v = (value ?? "").Trim();
+            if (v.Length == 0) return v;
+            if (double.TryParse(v, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) &&
+                d == Math.Floor(d) && Math.Abs(d) < 1e15)
+            {
+                return ((long)d).ToString(CultureInfo.InvariantCulture);
+            }
+            return v;
         }
 
         // ==================== CogSocket placeholder ====================
@@ -269,7 +283,7 @@ namespace CameraViewerDotnet
         {
             int slot;
             if (!_useSubGrid || IsDisposed || bmp == null ||
-                !_valueToSlot.TryGetValue((value ?? "").Trim(), out slot) || !_slotBoxes.ContainsKey(slot))
+                !_valueToSlot.TryGetValue(NormalizeShotValue(value), out slot) || !_slotBoxes.ContainsKey(slot))
             {
                 bmp?.Dispose();
                 return;

@@ -26,6 +26,7 @@
 - **`cellBindings`**：每个槽位填一个标识取值，值到达即把该次拍照的**原图**填入对应槽位；槽位号与子网格位置一一对应
 - 每个槽位左上角显示绑定的标识取值（未绑定时显示 `#槽位号`）
 - 仅当 `conn=cogsocket`、`subGridCount>1`、`identifierCell` 非空且至少有一个绑定值时才会启用子网格模式；配置不完整时单元格显示提示，**不回退 HTTP HMI 页面**
+- 标识单元格若为数值单元格（`HmiFloatResult`，如 A27 条件号返回 `41.0`），绑定值会先归一化为整数再匹配（`41.0 → 41`）
 - 最小槽位对应的取值到达时视为新一轮产品，**先清空所有子网格**，避免新旧产品图片混淆
 - 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
@@ -77,10 +78,11 @@
 ### CogSocket 协议（参考 CameraCellMonitor 实测）
 
 ```
-WebSocket 握手  ws://host:8087/ws
+WebSocket 握手  ws://host:80/ws（未写端口默认 80；连接失败自动回退 8087）
   ↓ post @/hello (optional, old firmware may reject — non-fatal)
   ↓ detect root: GET cam0/hmi/info → fallback system/info
-  ↓ POST {root}/openSession  body={"$type":"HmiSessionInfo","cellNames":[identifierCell]}  → 得到 sid
+  ↓ POST {root}/openSession  body={"$type":"HmiSessionInfo","cellNames":[identifierCell:identifierCell]}  → 得到 sid
+      （固件只识别范围形式：A21 → "A21:A21"，单地址会返回空 cells）
   ↓ POST {sid}/login  ["admin","",false]  (non-fatal)
   ↓ listen {sid}/resultChanged  ← 一个事件返回完整 HmiResult.cells[]
   ↓ POST {sid}/ready  ← 触发相机推第一帧
@@ -162,5 +164,5 @@ CameraViewerDotnet/
 - **opt-camera-sdk/Runtime/**：SciCamera SDK 原生 DLL 体积大（约 120MB），不进 git；部署时由安装包或 `.zip` 释放到 `opt-camera-sdk/Runtime/`，`SciCamNative.Configure()` 自动定位
 - **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+）；同一 `IP:Port` 的多个 Cell 共用一条 WebSocket（N 个格子 = 1 个连接），多台相机时仍需控制总数
 - **GigE 现状**：原生取流尚未接入；设置页仅保存序列号与曝光，不提供 URL 输入，因此单元格暂无画面（沿用旧 `ip` 时按 WebView2 加载）
-- **In-Sight IP 端口**：固件 6.x+ 默认 8087，22.2+ 固定 80
+- **In-Sight IP 端口**：未写端口默认 80（固件 22.2+ 固定 80）；连接失败自动回退 8087（早期固件）
 - **ready 握手**：CogSocket 模式下必须在 `resultChanged` 事件回调末尾发 `POST {sid}/ready`，否则相机只推一帧就停（CameraCellMonitor 实测）
