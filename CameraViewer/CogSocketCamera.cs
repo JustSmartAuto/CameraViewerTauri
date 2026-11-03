@@ -40,24 +40,26 @@ namespace CameraViewer
         private string _root = "cam0/hmi";
         private string _sessionId;
 
-        /// <summary>拍照标识单元格地址（如 A21），其取值（11/21/31/41…）标识第几次拍照。</summary>
-        private readonly string _identifierCell;
+        /// <summary>需要关注的拍照标识单元格集合（如 A21），其取值（11/21/31/41…）标识第几次拍照。</summary>
+        private readonly HashSet<string> _identifierCells;
 
-        /// <summary>一次拍照完成：标识单元格取值 + 本次拍照原图。回调在后台线程，位图由接收方接管释放。</summary>
-        public event Action<string, Bitmap> SubGridResult;
+        /// <summary>一次拍照完成：标识单元格名 + 取值 + 本次拍照原图。回调在后台线程，位图由接收方接管释放。</summary>
+        public event Action<string, string, Bitmap> CellResult;
 
         public string IpPort { get; }
         public bool IsConnected => _ws?.State == WebSocketState.Open;
 
-        public CogSocketCamera(string hostPort, string identifierCell = "", string username = "admin", string password = "")
+        public CogSocketCamera(string hostPort, IEnumerable<string> identifierCells, string username = "admin", string password = "")
         {
-            var hp = (hostPort ?? "").Trim();
-            if (!hp.Contains(':')) hp += ":8087";
+            var hp = NormalizeHostPort(hostPort);
             IpPort = hp;
             var parts = hp.Split(':');
             _host = parts[0];
             _port = int.TryParse(parts[1], out var p) ? p : 8087;
-            _identifierCell = (identifierCell ?? "").Trim();
+            _identifierCells = new HashSet<string>(
+                (identifierCells ?? Enumerable.Empty<string>())
+                    .Select(NormalizeCell)
+                    .Where(c => c.Length > 0));
             _username = username;
             _password = password;
             _wsUri = new Uri($"ws://{_host}:{_port}/ws");
@@ -65,6 +67,18 @@ namespace CameraViewer
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _http.DefaultRequestHeaders.Add("User-Agent", "CameraViewerDotnet");
         }
+
+        /// <summary>hostPort 归一化：未写端口时补 8087（共享连接以此为键）。</summary>
+        public static string NormalizeHostPort(string hostPort)
+        {
+            var hp = (hostPort ?? "").Trim();
+            if (!hp.Contains(':')) hp += ":8087";
+            return hp;
+        }
+
+        /// <summary>单元格地址归一化：忽略大小写、$ 包裹与空白（A21 / $A$21）。</summary>
+        public static string NormalizeCell(string cell) =>
+            (cell ?? "").Replace("$", "").Replace(" ", "").Trim().ToUpperInvariant();
 
         private readonly string _host;
         private int _nextId;
@@ -252,54 +266,57 @@ namespace CameraViewer
             // Fire-and-forget: HTTP download + image decode on thread pool
             _ = Task.Run(async () =>
             {
-                Bitmap bmp = null;
+                Bitmap mainBmp = null;
                 try
                 {
-                    // 1. 从 cells 中取拍照标识单元格的取值（如 A21 = 11/21/31/41）
-                    string shotValue = null;
-                    string cellImageUrl = null;
+                    // 1. 找出本次结果中所有已订阅的拍照标识单元格及其取值（一台相机可被多个 Cell 共享）
+                    var matches = new List<(string Cell, string Value, string ImageUrl)>();
                     if (hmiResult.TryGetProperty("cells", out var cells) && cells.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var cell in cells.EnumerateArray())
                         {
                             var loc = cell.TryGetProperty("location", out var l) ? l.GetString()
                                     : cell.TryGetProperty("name", out var n) ? n.GetString() : null;
-                            if (string.IsNullOrEmpty(loc) || !SameCell(loc, _identifierCell)) continue;
-                            shotValue = ExtractCellValue(cell);
-                            cellImageUrl = ExtractCellImageUrl(cell);
+                            var norm = NormalizeCell(loc);
+                            if (norm.Length == 0 || !_identifierCells.Contains(norm)) continue;
+                            var value = ExtractCellValue(cell);
+                            if (string.IsNullOrEmpty(value)) continue;
+                            matches.Add((norm, value.Trim(), ExtractCellImageUrl(cell)));
                         }
                     }
+                    if (matches.Count == 0) return;
 
-                    // 2. 取原图（不缩放）：标识单元格自带图像地址时优先，否则用主采集视图
-                    if (!string.IsNullOrEmpty(cellImageUrl))
-                        bmp = await FetchImageAsync(cellImageUrl);
-                    if (bmp == null)
-                        bmp = await DecodeMainImageAsync(hmiResult);
-                    if (bmp == null || string.IsNullOrEmpty(shotValue))
+                    // 2. 取原图（不缩放）：标识单元格自带图像地址时优先，否则共用主采集视图原图
+                    foreach (var m in matches)
                     {
-                        bmp?.Dispose();
-                        return;
-                    }
+                        Bitmap bmp = null;
+                        if (!string.IsNullOrEmpty(m.ImageUrl))
+                            bmp = await FetchImageAsync(m.ImageUrl);
+                        if (bmp == null)
+                        {
+                            mainBmp ??= await DecodeMainImageAsync(hmiResult);
+                            if (mainBmp != null)
+                            {
+                                try { bmp = (Bitmap)mainBmp.Clone(); } catch { bmp = null; }
+                            }
+                        }
+                        if (bmp == null) continue;
 
-                    // 3. 交给界面按其绑定槽位显示
-                    SubGridResult?.Invoke(shotValue, bmp);
-                    bmp = null;
+                        // 3. 交给订阅者按其绑定槽位显示；位图所有权转移给回调
+                        var handler = CellResult;
+                        if (handler == null) { bmp.Dispose(); continue; }
+                        try { handler(m.Cell, m.Value, bmp); }
+                        catch { bmp.Dispose(); }
+                    }
                 }
-                catch { bmp?.Dispose(); }
+                catch { }
                 finally
                 {
+                    mainBmp?.Dispose();
                     // MUST send ready so camera pushes next frame (Python worker.py L138 comment)
                     try { await RequestAsync("post", $"{_sessionId}/ready", "", CancellationToken.None); } catch { }
                 }
             });
-        }
-
-        /// <summary>单元格地址比较：忽略大小写、$ 包裹与空白（A21 / $A$21）。</summary>
-        private static bool SameCell(string a, string b)
-        {
-            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
-            static string Norm(string s) => s.Replace("$", "").Replace(" ", "").Trim().ToUpperInvariant();
-            return Norm(a) == Norm(b);
         }
 
         /// <summary>HmiResult.cells[] 取值：优先 value，其次 data。</summary>

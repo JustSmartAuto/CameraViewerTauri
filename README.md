@@ -30,6 +30,13 @@
 - 兼容旧配置：若存在旧字段 `cellSubscribe`，首次加载时取其第一个单元格名作为 `identifierCell`
 - CogSocket 协议完整复刻自 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测：`$type`/JSON-RPC + openSession + keepAlive(15s) + **每次 resultChanged 回调末尾发 ready 让相机推下一帧**
 
+### 一台相机一条连接（共享 CogSocket）
+
+- 相同 `IP:Port` 的多个 CameraCell 共用 `CogSocketManager` 中的一条 WebSocket（引用计数，最后一个 Cell 释放后自动关闭）
+- 连接按所有订阅者的 `identifierCell` 并集执行 `openSession`；新增标识单元格时自动重连补齐 session
+- 每次拍照结果到达后按标识单元格分发给订阅者，各 Cell 再执行 `cellValue → slot`（如 `11 → 槽位 1`）；多个 Cell 共用同一张原图时各自持有位图副本
+- 顶部刷新按钮只会重建该相机的共享连接，同相机的其他 Cell 会自动恢复接收
+
 ### 网格布局
 
 - 1–36 路相机布局（1/2/4/6/9/12/16/20/24/25/30/36）
@@ -129,6 +136,7 @@ CameraViewerDotnet/
 │   ├── AntIcon.cs               # AntdUI 内置 SVG 图标
 │   ├── AboutWindow.cs           # 关于页
 │   ├── Assets/hmi-i18n.js       # WebView2 注入的 HMI 中文化脚本（EmbeddedResource）
+│   ├── CogSocketManager.cs      # 按 IP:Port 共享连接（引用计数 + 按标识单元格分发）
 │   ├── CogSocketCamera.cs       # WebSocket 客户端（按 CameraCellMonitor 实测协议，含 CogSocketException）
 │   ├── TransformPart.cs         # PartType + TransformPart 模型
 │   ├── ActionQueueWorker.cs     # Lens 复刻：串行队列消费
@@ -152,7 +160,7 @@ CameraViewerDotnet/
 - **WebView2 运行时**：Http/GigE 模式依赖 WebView2；部分精简版 Win10 工控机可能缺失，首次运行需联网下载，或另行部署 WebView2 离线包
 - **启动器内嵌 .NET 8 运行时**：工控机完全离线也能完成运行时安装
 - **opt-camera-sdk/Runtime/**：SciCamera SDK 原生 DLL 体积大（约 120MB），不进 git；部署时由安装包或 `.zip` 释放到 `opt-camera-sdk/Runtime/`，`SciCamNative.Configure()` 自动定位
-- **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+）；当前每个 CameraCell 各自开独立 WebSocket（无共享连接池），同 hostPort 多格时请控制格子数量
+- **CogSocket 连接数**：康耐视 In-Sight 默认最多 5 个 view connection（固件 22.2+）；同一 `IP:Port` 的多个 Cell 共用一条 WebSocket（N 个格子 = 1 个连接），多台相机时仍需控制总数
 - **GigE 现状**：原生取流尚未接入；设置页仅保存序列号与曝光，不提供 URL 输入，因此单元格暂无画面（沿用旧 `ip` 时按 WebView2 加载）
 - **In-Sight IP 端口**：固件 6.x+ 默认 8087，22.2+ 固定 80
 - **ready 握手**：CogSocket 模式下必须在 `resultChanged` 事件回调末尾发 `POST {sid}/ready`，否则相机只推一帧就停（CameraCellMonitor 实测）

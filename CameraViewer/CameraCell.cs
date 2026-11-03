@@ -35,7 +35,7 @@ namespace CameraViewerDotnet
         private readonly TableLayoutPanel _subGridPanel;
         private Panel _placeholderHost;
         private System.Windows.Forms.Label _placeholderLabel;
-        private CogSocketCamera _cogCam;
+        private CogSocketSubscription _cogSub;   // 共享连接订阅（同一相机多 Cell 复用一条 WebSocket）
 
         private bool _isMaximized;
         private static string _hmiI18nScript;
@@ -131,8 +131,8 @@ namespace CameraViewerDotnet
                 root.Controls.Add(_subGridPanel, 0, 1);
                 root.Controls.Add(_top, 0, 0);
                 Controls.Add(root);
-                // Connect CogSocket
-                _ = InitCogSocketAsync();
+                // Subscribe shared CogSocket connection
+                InitCogSocket();
             }
             else if (_isCogSocket)
             {
@@ -257,17 +257,11 @@ namespace CameraViewerDotnet
 
         // ==================== CogSocket lifecycle ====================
 
-        private async System.Threading.Tasks.Task InitCogSocketAsync()
+        private void InitCogSocket()
         {
             var item = ConfigService.EnsureItem(_id);
-            if (string.IsNullOrWhiteSpace(item.ip)) return;
-            try
-            {
-                _cogCam = new CogSocketCamera(item.ip, _identifierCell);
-                _cogCam.SubGridResult += OnSubGridResult;
-                await _cogCam.ConnectAsync(new[] { _identifierCell });
-            }
-            catch { _cogCam?.Dispose(); _cogCam = null; }
+            if (string.IsNullOrWhiteSpace(item.ip) || _cogSub != null) return;
+            _cogSub = CogSocketManager.Subscribe(item.ip, _identifierCell, OnSubGridResult);
         }
 
         /// <summary>拍照完成回调（后台线程）：标识取值 → 绑定槽位 → 显示原图。</summary>
@@ -448,14 +442,9 @@ namespace CameraViewerDotnet
             if (_useSubGrid)
             {
                 ClearAllSubGrids();
-                // Re-init cog socket connection
-                if (_cogCam != null)
-                {
-                    try { _cogCam.CloseAsync().Wait(TimeSpan.FromSeconds(3)); } catch { }
-                    _cogCam.Dispose();
-                    _cogCam = null;
-                }
-                await InitCogSocketAsync();
+                InitCogSocket();
+                // 刷新：重建该相机的共享连接（同相机的其他 Cell 会自动恢复接收）
+                CogSocketManager.Reconnect(ConfigService.EnsureItem(_id).ip);
                 return;
             }
             // CogSocket 未完成配置：不回退 HTTP WebView2
@@ -481,12 +470,10 @@ namespace CameraViewerDotnet
 
             if (_useSubGrid)
             {
-                if (_cogCam != null)
+                if (_cogSub != null)
                 {
-                    _cogCam.SubGridResult -= OnSubGridResult;
-                    try { _cogCam.CloseAsync().Wait(TimeSpan.FromSeconds(3)); } catch { }
-                    _cogCam.Dispose();
-                    _cogCam = null;
+                    _cogSub.Dispose();
+                    _cogSub = null;
                 }
                 // Dispose any PictureBox images
                 if (_subGridPanel != null)
