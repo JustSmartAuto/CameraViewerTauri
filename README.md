@@ -67,7 +67,7 @@
 | **相机设置** | 每路卡片：连接方式下拉、URL（Http/CogSocket）或序列号/曝光（GigE）、CogSocket 拍照标识单元格 + subGridCount + 各槽位取值绑定、备注、锁定 |
 | **显示设置** | 明亮 / 暗黑 / **BeOS teal chrome** 三种 AntdUI 主题 |
 | **软件设置** | 中文 / English，**配置目录切换**（`bootstrap.json` 多开支持） |
-| **文件中转** | 复刻 CameraHelperLens：TransformConfig + 完整 DataGridView 部件编辑器（文件夹部件 / 文件名部件，`AntdUI.Collapse` 可折叠）；文件写入稳定等待；FileSystemWatcher 监听；可选立即处理一次 |
+| **文件转存** | 复刻 CameraHelperLens：多套命名配置（名称下拉 + 添加 / 删除 / 保存应用）+ 文件夹 / 文件名称部件编辑器（DataGridView，选中行后编辑原始序号或 PC时间格式，支持添加 / 删除 / 清空与类型选择）；文件写入稳定等待；每套配置独立 FileSystemWatcher 监听；可选立即处理一次 |
 | **存图清理** | 复刻 CameraHelperLens：CleanConfig（扫描间隔 / 保留天数 OR 剩余空间阈值 / 清理间隔 / 空目录清理）；可配多个清理策略组合 |
 | **JOBX 备份** | FTP/FTPS 相机列表（名称/IP/端口/用户名/密码/备份目录）；一键或全部备份；递归下载 `.jobx`/`.jobx.sig`；环形日志实时显示 |
 
@@ -110,14 +110,16 @@ WebSocket 握手  ws://host:80/ws（未写端口默认 80；连接失败自动�
   ↓ 后台再 HTTP GET 原图（不带 sz，不缩放）→ 成功则替换缩略图，失败保持缩略图
 ```
 
-### 文件中转架构（复刻自 CameraHelperLens）
+### 文件转存架构（复刻自 CameraHelperLens）
 
 ```
+App.Transits         每套 TransformConfig 对应一个 FileTransformer（保存 / 删除配置后统一重建）
 ActionQueueWorker    ConcurrentQueue<TransformAction> + Thread + ManualResetEvent 串行消费
 TransformAction      等待目录文件写入稳定 → 按配置拆分文件夹/文件名 → 组合目标路径 → File.Move
 FileTransformer      FileSystemWatcher 监听 WatchPath → Created 事件 Enqueue
 TransformConfig      Name / IsEnable / WatchPath / SourceSpliter / FolderIndex / FileNameIndex /
                      FolderSpliter / FileNameSpliter / FolderPartList / FileNamePartList
+                     配置文件以数组保存多套配置，并兼容旧版单对象格式
 TransformPart        PartType(Name|DateTime) / SourceIndex / Format
 ```
 

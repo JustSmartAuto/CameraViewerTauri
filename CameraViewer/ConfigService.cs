@@ -112,7 +112,8 @@ namespace CameraViewer
         public static string ConfigDir { get; private set; }
         public static CameraConfig Camera { get; private set; } = new CameraConfig();
         public static AppConfig App { get; private set; } = new AppConfig();
-        public static TransformConfig Transform { get; private set; } = new TransformConfig();
+        /// <summary>文件中转配置列表（支持按名称多套并存）。</summary>
+        public static List<TransformConfig> Transforms { get; private set; } = new List<TransformConfig>();
         public static CleanConfig Clean { get; private set; } = new CleanConfig();
         public static JobxBackupConfig JobxBackup { get; private set; } = new JobxBackupConfig();
 
@@ -258,45 +259,71 @@ namespace CameraViewer
         private static void LoadTransform()
         {
             var path = Path.Combine(ConfigDir, "TransformConfig.json");
-            if (!File.Exists(path)) { Transform = new TransformConfig(); return; }
-            try
+            var list = new List<TransformConfig>();
+            if (File.Exists(path))
             {
-                var node = JsonNode.Parse(File.ReadAllText(path));
-                if (node == null) { Transform = new TransformConfig(); return; }
-                var t = new TransformConfig
+                try
                 {
-                    Name = node["Name"]?.GetValue<string>() ?? "",
-                    IsEnable = node["IsEnable"]?.GetValue<bool>() ?? false,
-                    WatchPath = node["WatchPath"]?.GetValue<string>() ?? "",
-                    SourceSpliter = node["SourceSpliter"]?.GetValue<string>() ?? ",",
-                    FolderIndex = node["FolderIndex"]?.GetValue<int>() ?? 0,
-                    FileNameIndex = node["FileNameIndex"]?.GetValue<int>() ?? 1,
-                    FolderSpliter = node["FolderSpliter"]?.GetValue<string>() ?? "+",
-                    FileNameSpliter = node["FileNameSpliter"]?.GetValue<string>() ?? "_",
-                };
-                foreach (var n in node["FolderPartList"]?.AsArray() ?? new JsonArray())
-                {
-                    if (n == null) continue;
-                    t.FolderPartList.Add(new TransformPart
+                    var node = JsonNode.Parse(File.ReadAllText(path));
+                    if (node is JsonArray arr)
                     {
-                        PartType = n["PartType"]?.GetValue<string>() == "DateTime" ? TransformPartType.DateTime : TransformPartType.Name,
-                        SourceIndex = n["SourceIndex"]?.GetValue<int>() ?? 0,
-                        Format = n["Format"]?.GetValue<string>() ?? "",
-                    });
-                }
-                foreach (var n in node["FileNamePartList"]?.AsArray() ?? new JsonArray())
-                {
-                    if (n == null) continue;
-                    t.FileNamePartList.Add(new TransformPart
+                        foreach (var n in arr)
+                        {
+                            if (n == null) continue;
+                            list.Add(ParseTransform(n));
+                        }
+                    }
+                    else if (node != null)
                     {
-                        PartType = n["PartType"]?.GetValue<string>() == "DateTime" ? TransformPartType.DateTime : TransformPartType.Name,
-                        SourceIndex = n["SourceIndex"]?.GetValue<int>() ?? 0,
-                        Format = n["Format"]?.GetValue<string>() ?? "",
-                    });
+                        // 兼容旧版：配置文件是单个 TransformConfig 对象
+                        list.Add(ParseTransform(node));
+                    }
                 }
-                Transform = t;
+                catch { list.Clear(); }
             }
-            catch { Transform = new TransformConfig(); }
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (string.IsNullOrWhiteSpace(list[i].Name))
+                    list[i].Name = $"相机{i + 1}";
+            }
+            if (list.Count == 0) list.Add(new TransformConfig { Name = "相机1" });
+            Transforms = list;
+        }
+
+        private static TransformConfig ParseTransform(JsonNode node)
+        {
+            var t = new TransformConfig
+            {
+                Name = node["Name"]?.GetValue<string>() ?? "",
+                IsEnable = node["IsEnable"]?.GetValue<bool>() ?? false,
+                WatchPath = node["WatchPath"]?.GetValue<string>() ?? "",
+                SourceSpliter = node["SourceSpliter"]?.GetValue<string>() ?? ",",
+                FolderIndex = node["FolderIndex"]?.GetValue<int>() ?? 0,
+                FileNameIndex = node["FileNameIndex"]?.GetValue<int>() ?? 1,
+                FolderSpliter = node["FolderSpliter"]?.GetValue<string>() ?? "+",
+                FileNameSpliter = node["FileNameSpliter"]?.GetValue<string>() ?? "_",
+            };
+            foreach (var n in node["FolderPartList"]?.AsArray() ?? new JsonArray())
+            {
+                if (n == null) continue;
+                t.FolderPartList.Add(new TransformPart
+                {
+                    PartType = n["PartType"]?.GetValue<string>() == "DateTime" ? TransformPartType.DateTime : TransformPartType.Name,
+                    SourceIndex = n["SourceIndex"]?.GetValue<int>() ?? 0,
+                    Format = n["Format"]?.GetValue<string>() ?? "",
+                });
+            }
+            foreach (var n in node["FileNamePartList"]?.AsArray() ?? new JsonArray())
+            {
+                if (n == null) continue;
+                t.FileNamePartList.Add(new TransformPart
+                {
+                    PartType = n["PartType"]?.GetValue<string>() == "DateTime" ? TransformPartType.DateTime : TransformPartType.Name,
+                    SourceIndex = n["SourceIndex"]?.GetValue<int>() ?? 0,
+                    Format = n["Format"]?.GetValue<string>() ?? "",
+                });
+            }
+            return t;
         }
 
         private static void LoadClean()
@@ -363,30 +390,30 @@ namespace CameraViewer
         public static void SaveTransform()
         {
             // JsonNode doesn't support enum serialization easily — use JsonSerializer directly with string converter
-            var obj = new
+            var list = Transforms.Select(t => new
             {
-                Transform.Name,
-                Transform.IsEnable,
-                Transform.WatchPath,
-                Transform.SourceSpliter,
-                Transform.FolderIndex,
-                Transform.FileNameIndex,
-                Transform.FolderSpliter,
-                FolderPartList = Transform.FolderPartList?.Select(p => new
+                t.Name,
+                t.IsEnable,
+                t.WatchPath,
+                t.SourceSpliter,
+                t.FolderIndex,
+                t.FileNameIndex,
+                t.FolderSpliter,
+                FolderPartList = t.FolderPartList?.Select(p => new
                 {
                     PartType = p.PartType.ToString(),
                     p.SourceIndex,
                     p.Format,
                 }).ToList(),
-                Transform.FileNameSpliter,
-                FileNamePartList = Transform.FileNamePartList?.Select(p => new
+                t.FileNameSpliter,
+                FileNamePartList = t.FileNamePartList?.Select(p => new
                 {
                     PartType = p.PartType.ToString(),
                     p.SourceIndex,
                     p.Format,
                 }).ToList(),
-            };
-            File.WriteAllText(Path.Combine(ConfigDir, "TransformConfig.json"), JsonSerializer.Serialize(obj, Opts));
+            }).ToList();
+            File.WriteAllText(Path.Combine(ConfigDir, "TransformConfig.json"), JsonSerializer.Serialize(list, Opts));
         }
 
         public static void SaveClean() =>

@@ -600,210 +600,612 @@ namespace CameraViewerDotnet
         [Obsolete("Replaced by BuildAppPage")]
         private Control BuildLanguagePage() { return BuildAppPage(); }
 
-        // ---------- 文件中转（复刻 CameraHelperLens 完整 UI） ----------
+        // ---------- 文件转存（对标 CameraHelperLens：多配置 + 文件夹/文件名部件编辑器） ----------
         private Control BuildTransitPage()
         {
             // 外层可滚动
             var scroll = new System.Windows.Forms.Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = ThemeManager.Bg2, Padding = new Padding(0, 4, 0, 4) };
 
             var panel = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 1, AutoSize = true, Padding = new Padding(4) };
-            for (int r = 0; r < 8; r++) panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            for (int r = 0; r < 4; r++) panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var t = ConfigService.Transform;
+            TransformConfig cur = ConfigService.Transforms.Count > 0 ? ConfigService.Transforms[0] : null;
+            bool syncing = false; // 切换配置/刷新控件时阻止事件回写
 
-            // Row 0: 启用 + 保存应用 + 立即处理
-            var topRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false };
-            var enableCheck = new AntdUI.Checkbox { Text = I18n.T("transitEnable"), Checked = t.IsEnable, AutoSizeMode = TAutoSize.Auto };
-            enableCheck.CheckedChanged += (s, e) => { t.IsEnable = e.Value; ConfigService.SaveTransform(); };
+            // Row 0: 名称下拉 + 添加 / 删除 + 启用 + 立即处理 + 保存应用
+            var topRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true };
+            var nameLabel = MakeLabel(I18n.T("name"));
+            topRow.Controls.Add(nameLabel);
+
+            var nameCombo = new System.Windows.Forms.ComboBox
+            {
+                Width = 160,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = ThemeManager.Bg3,
+                ForeColor = ThemeManager.Fg,
+                Margin = new Padding(0, 4, 0, 0),
+            };
+            foreach (var c in ConfigService.Transforms) nameCombo.Items.Add(c.Name);
+            if (nameCombo.Items.Count > 0) nameCombo.SelectedIndex = 0;
+            topRow.Controls.Add(nameCombo);
+
+            var addCfgBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("transitAdd"), Margin = new Padding(8, 0, 0, 0) };
+            topRow.Controls.Add(addCfgBtn);
+            var delCfgBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("delete"), Margin = new Padding(4, 0, 0, 0) };
+            topRow.Controls.Add(delCfgBtn);
+
+            var enableCheck = new AntdUI.Checkbox { Text = I18n.T("transitEnable"), Checked = cur != null && cur.IsEnable, AutoSizeMode = TAutoSize.Auto, Margin = new Padding(16, 6, 0, 0) };
             topRow.Controls.Add(enableCheck);
 
-            var saveBtn = new AntdUI.Button { Width = 110, Height = 30, Text = I18n.T("apply"), Margin = new Padding(16, 0, 0, 0) };
-            saveBtn.Click += (s, e) =>
-            {
-                ConfigService.SaveTransform();
-                App.Transit?.UpdateConfig(t);
-            };
-            topRow.Controls.Add(saveBtn);
-
             var runBtn = new AntdUI.Button { Width = 130, Height = 30, Text = I18n.T("transitRun"), Margin = new Padding(8, 0, 0, 0) };
-            runBtn.Click += (s, e) =>
-                _ = System.Threading.Tasks.Task.Run(() => { try { new TransformAction { Config = t }.RunAction(); } catch { } });
             topRow.Controls.Add(runBtn);
+            var saveBtn = new AntdUI.Button { Width = 110, Height = 30, Text = I18n.T("saveApply"), Margin = new Padding(8, 0, 0, 0) };
+            topRow.Controls.Add(saveBtn);
             panel.Controls.Add(topRow, 0, 0);
 
-            // Row 1: WatchPath + 浏览（宽度不足时整组换行，不裁切）
-            var watchRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
-            watchRow.Controls.Add(MakeLabel(I18n.T("transitWatch")));
-            var watchBox = new AntdUI.Input { Width = 460, Height = 30, Text = t.WatchPath, PlaceholderText = "D:\\CameraOutput\\待处理" };
-            watchBox.LostFocus += (s, e) => { t.WatchPath = watchBox.Text.Trim(); };
+            // Row 1: 路径 + 打开
+            var watchRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 6, 0, 0) };
+            var watchLabel = MakeLabel(I18n.T("transitWatch"));
+            watchRow.Controls.Add(watchLabel);
+            var watchBox = new AntdUI.Input { Width = 440, Height = 30, Text = cur?.WatchPath ?? "", PlaceholderText = "D:\\CameraOutput\\待处理" };
             watchRow.Controls.Add(watchBox);
-            var watchBrowseBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("select"), Margin = new Padding(8, 0, 0, 0) };
-            watchBrowseBtn.Click += (s, e) =>
-            {
-                using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = I18n.T("transitWatch") };
-                if (dlg.ShowDialog(this) == DialogResult.OK) watchBox.Text = dlg.SelectedPath;
-            };
-            watchRow.Controls.Add(watchBrowseBtn);
+            var watchOpenBtn = new AntdUI.Button { Width = 78, Height = 30, Text = I18n.T("transitOpen"), Margin = new Padding(8, 0, 0, 0) };
+            watchRow.Controls.Add(watchOpenBtn);
             panel.Controls.Add(watchRow, 0, 1);
 
-            // Row 2: 分隔符 + 索引（标签与输入框成组，宽度不足时整组换行，不拆散也不裁切）
-            var splitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
-            var splitBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.SourceSpliter };
-            splitBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(splitBox.Text)) t.SourceSpliter = splitBox.Text[0].ToString(); };
-            splitRow.Controls.Add(MakeField(I18n.T("transitSourceSplit"), splitBox));
-            var folderIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = t.FolderIndex };
-            folderIdxBox.ValueChanged += (s, e) => { t.FolderIndex = (int)e.Value; };
-            splitRow.Controls.Add(MakeField(I18n.T("transitFolderIdx"), folderIdxBox));
-            var fileIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = t.FileNameIndex };
-            fileIdxBox.ValueChanged += (s, e) => { t.FileNameIndex = (int)e.Value; };
-            splitRow.Controls.Add(MakeField(I18n.T("transitFileIdx"), fileIdxBox));
+            // Row 2: 内容分隔符 + 文件夹内序号 + 文件名内序号
+            var splitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 6, 0, 0) };
+            var splitLabel = MakeLabel(I18n.T("transitSourceSplit"));
+            var splitBox = new AntdUI.Input { Width = 60, Height = 30, Text = cur?.SourceSpliter ?? "," };
+            splitRow.Controls.Add(splitLabel); splitRow.Controls.Add(splitBox);
+            var folderIdxLabel = MakeLabel(I18n.T("transitFolderIdx"));
+            folderIdxLabel.Margin = new Padding(16, 8, 8, 8);
+            var folderIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = cur?.FolderIndex ?? 0 };
+            splitRow.Controls.Add(folderIdxLabel); splitRow.Controls.Add(folderIdxBox);
+            var fileIdxLabel = MakeLabel(I18n.T("transitFileIdx"));
+            fileIdxLabel.Margin = new Padding(16, 8, 8, 8);
+            var fileIdxBox = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = cur?.FileNameIndex ?? 1 };
+            splitRow.Controls.Add(fileIdxLabel); splitRow.Controls.Add(fileIdxBox);
             panel.Controls.Add(splitRow, 0, 2);
 
-            // Row 3: 目标路径分隔符（单独一行，避免与上面的索引控件挤在同一行被裁切）
-            var targetSplitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
-            var folderSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.FolderSpliter };
-            folderSpliterBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(folderSpliterBox.Text)) t.FolderSpliter = folderSpliterBox.Text[0].ToString(); };
-            targetSplitRow.Controls.Add(MakeField(I18n.T("transitFolderSplit"), folderSpliterBox));
-            var fileSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = t.FileNameSpliter };
-            fileSpliterBox.LostFocus += (s, e) => { if (!string.IsNullOrEmpty(fileSpliterBox.Text)) t.FileNameSpliter = fileSpliterBox.Text[0].ToString(); };
-            targetSplitRow.Controls.Add(MakeField(I18n.T("transitFileSplit"), fileSpliterBox));
-            panel.Controls.Add(targetSplitRow, 0, 3);
-
-            // Row 3-6: 双 GroupBox（文件夹部件 + 文件名部件）— Lens 原版 DataGridView 编辑器
+            // Row 3: 文件夹 / 文件名称 两个部件编辑区
             var partsSplit = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, AutoSize = true, Padding = new Padding(0, 8, 0, 0) };
             partsSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
             partsSplit.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
 
-            // ===== 文件夹部件 GroupBox =====
-            var dirGroup = new AntdUI.Collapse { Text = I18n.T("transitFolderParts"), Margin = new Padding(4) };
-            var dirInner = new System.Windows.Forms.Panel { Dock = DockStyle.Fill, Padding = new Padding(4) };
-            DataGridView dirGrid = null;
+            // ===== 文件夹 =====
+            var dirGroup = new System.Windows.Forms.GroupBox { Text = I18n.T("transitFolderParts"), Height = 380, Dock = DockStyle.Top, Margin = new Padding(4), ForeColor = ThemeManager.Fg, BackColor = ThemeManager.Bg2 };
+            var dirTable = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(6), BackColor = ThemeManager.Bg2 };
+            dirTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            dirTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            dirTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            dirTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var dirAddBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "+" };
-            dirAddBtn.Click += (s, e) => { t.FolderPartList.Add(new TransformPart { PartType = TransformPartType.Name }); RebuildDirGrid(dirGrid); };
-            var dirDelBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "-", Margin = new Padding(4, 0, 0, 0) };
-            dirDelBtn.Click += (s, e) => { if (dirGrid.SelectedRows.Count > 0) { t.FolderPartList.RemoveAt(dirGrid.SelectedRows[0].Index); RebuildDirGrid(dirGrid); } };
-            var dirClearBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "×", Margin = new Padding(4, 0, 0, 0) };
-            dirClearBtn.Click += (s, e) => { t.FolderPartList.Clear(); RebuildDirGrid(dirGrid); };
+            var dirSplitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, BackColor = ThemeManager.Bg2 };
+            var dirSplitLabel = MakeLabel(I18n.T("transitFolderSplit"));
+            var folderSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = cur?.FolderSpliter ?? "+" };
+            dirSplitRow.Controls.Add(dirSplitLabel); dirSplitRow.Controls.Add(folderSpliterBox);
 
-            var dirBtnRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true };
+            var dirBtnRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, BackColor = ThemeManager.Bg2 };
+            var dirAddBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("transitAdd") };
+            var dirDelBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("delete"), Margin = new Padding(4, 0, 0, 0) };
+            var dirClearBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("transitClear"), Margin = new Padding(4, 0, 0, 0) };
             dirBtnRow.Controls.Add(dirAddBtn); dirBtnRow.Controls.Add(dirDelBtn); dirBtnRow.Controls.Add(dirClearBtn);
-            dirInner.Controls.Add(dirBtnRow);
 
-            dirGrid = new DataGridView
+            var dirGrid = MakePartGrid();
+
+            var dirSrcLabel = MakeLabel(I18n.T("transitSourceIdx"));
+            var dirSrcNum = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = 0 };
+            var dirSrcPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 16, 0), Visible = false, BackColor = ThemeManager.Bg2 };
+            dirSrcPanel.Controls.Add(dirSrcLabel); dirSrcPanel.Controls.Add(dirSrcNum);
+            var dirFmtLabel = MakeLabel(I18n.T("transitFormat"));
+            var dirFmtBox = new AntdUI.Input { Width = 150, Height = 30 };
+            var dirFmtPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Visible = false, BackColor = ThemeManager.Bg2 };
+            dirFmtPanel.Controls.Add(dirFmtLabel); dirFmtPanel.Controls.Add(dirFmtBox);
+            var dirBottom = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Visible = false, Margin = new Padding(0, 4, 0, 0), BackColor = ThemeManager.Bg2 };
+            dirBottom.Controls.Add(dirSrcPanel); dirBottom.Controls.Add(dirFmtPanel);
+
+            dirSrcNum.ValueChanged += (s, e) =>
             {
-                Dock = DockStyle.Fill,
-                Top = 36,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                BackgroundColor = ThemeManager.Bg3,
-                ForeColor = ThemeManager.Fg,
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = ThemeManager.Bg3, ForeColor = ThemeManager.Fg },
+                if (syncing) return;
+                var part = CurrentDirPart();
+                if (part != null && part.PartType == TransformPartType.Name) part.SourceIndex = (int)e.Value;
             };
-            dirGrid.Columns.Add("colIdx", "#");
-            dirGrid.Columns.Add("colType", I18n.T("transitPartType"));
-            dirGrid.Columns.Add("colSourceIdx", I18n.T("transitSourceIdx"));
-            dirGrid.Columns.Add("colFormat", I18n.T("transitFormat"));
-            dirGrid.CellValueChanged += (s, e) =>
+            dirFmtBox.LostFocus += (s, e) =>
             {
-                if (e.RowIndex < 0 || e.RowIndex >= t.FolderPartList.Count) return;
-                var part = t.FolderPartList[e.RowIndex];
-                if (e.ColumnIndex == 1)
+                if (syncing) return;
+                var part = CurrentDirPart();
+                if (part != null && part.PartType == TransformPartType.DateTime) part.Format = dirFmtBox.Text;
+            };
+
+            dirAddBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                var type = PromptPartType();
+                if (type == null) return;
+                cur.FolderPartList.Add(new TransformPart { PartType = type.Value });
+                RebuildDir();
+                if (dirGrid.Rows.Count > 0) dirGrid.Rows[dirGrid.Rows.Count - 1].Selected = true;
+            };
+            dirDelBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                var part = CurrentDirPart();
+                if (part == null) return;
+                cur.FolderPartList.Remove(part);
+                RebuildDir();
+            };
+            dirClearBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                cur.FolderPartList.Clear();
+                RebuildDir();
+            };
+
+            void RebuildDir()
+            {
+                syncing = true;
+                RebuildDirGrid(dirGrid, cur);
+                syncing = false;
+                dirBottom.Visible = false;
+                dirGrid.ClearSelection();
+            }
+
+            TransformPart CurrentDirPart()
+            {
+                if (cur == null) return null;
+                int idx = dirGrid.SelectedRows.Count > 0 ? dirGrid.SelectedRows[0].Index : (dirGrid.CurrentCell?.RowIndex ?? -1);
+                return idx >= 0 && idx < cur.FolderPartList.Count ? cur.FolderPartList[idx] : null;
+            }
+
+            void UpdateDirSelection()
+            {
+                if (syncing || cur == null) return;
+                var part = CurrentDirPart();
+                if (part == null) { dirBottom.Visible = false; return; }
+                dirBottom.Visible = true;
+                if (part.PartType == TransformPartType.Name)
                 {
-                    var typeName = dirGrid[e.ColumnIndex, e.RowIndex].Value?.ToString();
-                    part.PartType = typeName == "PC时间" ? TransformPartType.DateTime : TransformPartType.Name;
+                    dirSrcPanel.Visible = true;
+                    dirFmtPanel.Visible = false;
+                    syncing = true;
+                    dirSrcNum.Value = part.SourceIndex;
+                    syncing = false;
                 }
-                else if (e.ColumnIndex == 2 && int.TryParse(dirGrid[e.ColumnIndex, e.RowIndex].Value?.ToString(), out var si))
-                    part.SourceIndex = si;
-                else if (e.ColumnIndex == 3)
-                    part.Format = dirGrid[e.ColumnIndex, e.RowIndex].Value?.ToString() ?? "";
-            };
-            dirInner.Controls.Add(dirGrid);
-            RebuildDirGrid(dirGrid);
+                else
+                {
+                    dirSrcPanel.Visible = false;
+                    dirFmtPanel.Visible = true;
+                    syncing = true;
+                    dirFmtBox.Text = part.Format;
+                    syncing = false;
+                }
+            }
 
-            dirGroup.Controls.Add(dirInner);
-            partsSplit.Controls.Add(dirGroup, 0, 0);
+            dirGrid.SelectionChanged += (s, e) => UpdateDirSelection();
 
-            // ===== 文件名部件 GroupBox =====
-            var fileGroup = new AntdUI.Collapse { Text = I18n.T("transitFileParts"), Margin = new Padding(4) };
-            var fileInner = new System.Windows.Forms.Panel { Dock = DockStyle.Fill, Padding = new Padding(4) };
-            DataGridView fileGrid = null;
+            dirTable.Controls.Add(dirSplitRow, 0, 0);
+            dirTable.Controls.Add(dirBtnRow, 0, 1);
+            dirTable.Controls.Add(dirGrid, 0, 2);
+            dirTable.Controls.Add(dirBottom, 0, 3);
+            dirGroup.Controls.Add(dirTable);
 
-            var fileAddBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "+" };
-            fileAddBtn.Click += (s, e) => { t.FileNamePartList.Add(new TransformPart { PartType = TransformPartType.Name }); RebuildFileGrid(fileGrid); };
-            var fileDelBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "-", Margin = new Padding(4, 0, 0, 0) };
-            fileDelBtn.Click += (s, e) => { if (fileGrid.SelectedRows.Count > 0) { t.FileNamePartList.RemoveAt(fileGrid.SelectedRows[0].Index); RebuildFileGrid(fileGrid); } };
-            var fileClearBtn = new AntdUI.Button { Width = 64, Height = 28, Text = "×", Margin = new Padding(4, 0, 0, 0) };
-            fileClearBtn.Click += (s, e) => { t.FileNamePartList.Clear(); RebuildFileGrid(fileGrid); };
+            // ===== 文件名称 =====
+            var fileGroup = new System.Windows.Forms.GroupBox { Text = I18n.T("transitFileParts"), Height = 380, Dock = DockStyle.Top, Margin = new Padding(4), ForeColor = ThemeManager.Fg, BackColor = ThemeManager.Bg2 };
+            var fileTable = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(6), BackColor = ThemeManager.Bg2 };
+            fileTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            fileTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            fileTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+            fileTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var fileBtnRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true };
+            var fileSplitRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, BackColor = ThemeManager.Bg2 };
+            var fileSplitLabel = MakeLabel(I18n.T("transitFileSplit"));
+            var fileSpliterBox = new AntdUI.Input { Width = 60, Height = 30, Text = cur?.FileNameSpliter ?? "_" };
+            fileSplitRow.Controls.Add(fileSplitLabel); fileSplitRow.Controls.Add(fileSpliterBox);
+
+            var fileBtnRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, BackColor = ThemeManager.Bg2 };
+            var fileAddBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("transitAdd") };
+            var fileDelBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("delete"), Margin = new Padding(4, 0, 0, 0) };
+            var fileClearBtn = new AntdUI.Button { Width = 78, Height = 28, Text = I18n.T("transitClear"), Margin = new Padding(4, 0, 0, 0) };
             fileBtnRow.Controls.Add(fileAddBtn); fileBtnRow.Controls.Add(fileDelBtn); fileBtnRow.Controls.Add(fileClearBtn);
-            fileInner.Controls.Add(fileBtnRow);
 
-            fileGrid = new DataGridView
+            var fileGrid = MakePartGrid();
+
+            var fileSrcLabel = MakeLabel(I18n.T("transitSourceIdx"));
+            var fileSrcNum = new AntdUI.InputNumber { Width = 80, Height = 30, Minimum = 0, Maximum = 99, Increment = 1, Value = 0 };
+            var fileSrcPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 16, 0), Visible = false, BackColor = ThemeManager.Bg2 };
+            fileSrcPanel.Controls.Add(fileSrcLabel); fileSrcPanel.Controls.Add(fileSrcNum);
+            var fileFmtLabel = MakeLabel(I18n.T("transitFormat"));
+            var fileFmtBox = new AntdUI.Input { Width = 150, Height = 30 };
+            var fileFmtPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Visible = false, BackColor = ThemeManager.Bg2 };
+            fileFmtPanel.Controls.Add(fileFmtLabel); fileFmtPanel.Controls.Add(fileFmtBox);
+            var fileBottom = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = false, Visible = false, Margin = new Padding(0, 4, 0, 0), BackColor = ThemeManager.Bg2 };
+            fileBottom.Controls.Add(fileSrcPanel); fileBottom.Controls.Add(fileFmtPanel);
+
+            fileSrcNum.ValueChanged += (s, e) =>
             {
-                Dock = DockStyle.Fill,
-                Top = 36,
-                RowHeadersVisible = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                BackgroundColor = ThemeManager.Bg3,
-                ForeColor = ThemeManager.Fg,
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = ThemeManager.Bg3, ForeColor = ThemeManager.Fg },
+                if (syncing) return;
+                var part = CurrentFilePart();
+                if (part != null && part.PartType == TransformPartType.Name) part.SourceIndex = (int)e.Value;
             };
-            fileGrid.Columns.Add("colIdx", "#");
-            fileGrid.Columns.Add("colType", I18n.T("transitPartType"));
-            fileGrid.Columns.Add("colSourceIdx", I18n.T("transitSourceIdx"));
-            fileGrid.Columns.Add("colFormat", I18n.T("transitFormat"));
-            fileGrid.CellValueChanged += (s, e) =>
+            fileFmtBox.LostFocus += (s, e) =>
             {
-                if (e.RowIndex < 0 || e.RowIndex >= t.FileNamePartList.Count) return;
-                var part = t.FileNamePartList[e.RowIndex];
-                if (e.ColumnIndex == 1)
+                if (syncing) return;
+                var part = CurrentFilePart();
+                if (part != null && part.PartType == TransformPartType.DateTime) part.Format = fileFmtBox.Text;
+            };
+
+            fileAddBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                var type = PromptPartType();
+                if (type == null) return;
+                cur.FileNamePartList.Add(new TransformPart { PartType = type.Value });
+                RebuildFile();
+                if (fileGrid.Rows.Count > 0) fileGrid.Rows[fileGrid.Rows.Count - 1].Selected = true;
+            };
+            fileDelBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                var part = CurrentFilePart();
+                if (part == null) return;
+                cur.FileNamePartList.Remove(part);
+                RebuildFile();
+            };
+            fileClearBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                cur.FileNamePartList.Clear();
+                RebuildFile();
+            };
+
+            void RebuildFile()
+            {
+                syncing = true;
+                RebuildFileGrid(fileGrid, cur);
+                syncing = false;
+                fileBottom.Visible = false;
+                fileGrid.ClearSelection();
+            }
+
+            TransformPart CurrentFilePart()
+            {
+                if (cur == null) return null;
+                int idx = fileGrid.SelectedRows.Count > 0 ? fileGrid.SelectedRows[0].Index : (fileGrid.CurrentCell?.RowIndex ?? -1);
+                return idx >= 0 && idx < cur.FileNamePartList.Count ? cur.FileNamePartList[idx] : null;
+            }
+
+            void UpdateFileSelection()
+            {
+                if (syncing || cur == null) return;
+                var part = CurrentFilePart();
+                if (part == null) { fileBottom.Visible = false; return; }
+                fileBottom.Visible = true;
+                if (part.PartType == TransformPartType.Name)
                 {
-                    var typeName = fileGrid[e.ColumnIndex, e.RowIndex].Value?.ToString();
-                    part.PartType = typeName == "PC时间" ? TransformPartType.DateTime : TransformPartType.Name;
+                    fileSrcPanel.Visible = true;
+                    fileFmtPanel.Visible = false;
+                    syncing = true;
+                    fileSrcNum.Value = part.SourceIndex;
+                    syncing = false;
                 }
-                else if (e.ColumnIndex == 2 && int.TryParse(fileGrid[e.ColumnIndex, e.RowIndex].Value?.ToString(), out var si))
-                    part.SourceIndex = si;
-                else if (e.ColumnIndex == 3)
-                    part.Format = fileGrid[e.ColumnIndex, e.RowIndex].Value?.ToString() ?? "";
-            };
-            fileInner.Controls.Add(fileGrid);
-            RebuildFileGrid(fileGrid);
+                else
+                {
+                    fileSrcPanel.Visible = false;
+                    fileFmtPanel.Visible = true;
+                    syncing = true;
+                    fileFmtBox.Text = part.Format;
+                    syncing = false;
+                }
+            }
 
-            fileGroup.Controls.Add(fileInner);
+            fileGrid.SelectionChanged += (s, e) => UpdateFileSelection();
+
+            fileTable.Controls.Add(fileSplitRow, 0, 0);
+            fileTable.Controls.Add(fileBtnRow, 0, 1);
+            fileTable.Controls.Add(fileGrid, 0, 2);
+            fileTable.Controls.Add(fileBottom, 0, 3);
+            fileGroup.Controls.Add(fileTable);
+
+            partsSplit.Controls.Add(dirGroup, 0, 0);
             partsSplit.Controls.Add(fileGroup, 1, 0);
-            panel.Controls.Add(partsSplit, 0, 4);
+            panel.Controls.Add(partsSplit, 0, 3);
+
+            RebuildDir();
+            RebuildFile();
+
+            // ---------- 事件 ----------
+            void LoadProfile(int index)
+            {
+                if (index < 0 || index >= ConfigService.Transforms.Count) return;
+                cur = ConfigService.Transforms[index];
+                syncing = true;
+                watchBox.Text = cur.WatchPath;
+                splitBox.Text = cur.SourceSpliter;
+                folderIdxBox.Value = cur.FolderIndex;
+                fileIdxBox.Value = cur.FileNameIndex;
+                folderSpliterBox.Text = cur.FolderSpliter;
+                fileSpliterBox.Text = cur.FileNameSpliter;
+                enableCheck.Checked = cur.IsEnable;
+                RebuildDirGrid(dirGrid, cur);
+                RebuildFileGrid(fileGrid, cur);
+                syncing = false;
+                dirBottom.Visible = false;
+                fileBottom.Visible = false;
+                dirGrid.ClearSelection();
+                fileGrid.ClearSelection();
+            }
+
+            void CommitFields()
+            {
+                if (cur == null) return;
+                cur.WatchPath = watchBox.Text.Trim();
+                if (!string.IsNullOrEmpty(splitBox.Text)) cur.SourceSpliter = splitBox.Text[0].ToString();
+                cur.FolderIndex = (int)folderIdxBox.Value;
+                cur.FileNameIndex = (int)fileIdxBox.Value;
+                if (!string.IsNullOrEmpty(folderSpliterBox.Text)) cur.FolderSpliter = folderSpliterBox.Text[0].ToString();
+                if (!string.IsNullOrEmpty(fileSpliterBox.Text)) cur.FileNameSpliter = fileSpliterBox.Text[0].ToString();
+            }
+
+            nameCombo.SelectedIndexChanged += (s, e) =>
+            {
+                if (syncing) return;
+                LoadProfile(nameCombo.SelectedIndex);
+            };
+
+            watchBox.LostFocus += (s, e) => { if (cur != null) cur.WatchPath = watchBox.Text.Trim(); };
+            splitBox.LostFocus += (s, e) => { if (cur != null && !string.IsNullOrEmpty(splitBox.Text)) cur.SourceSpliter = splitBox.Text[0].ToString(); };
+            folderSpliterBox.LostFocus += (s, e) => { if (cur != null && !string.IsNullOrEmpty(folderSpliterBox.Text)) cur.FolderSpliter = folderSpliterBox.Text[0].ToString(); };
+            fileSpliterBox.LostFocus += (s, e) => { if (cur != null && !string.IsNullOrEmpty(fileSpliterBox.Text)) cur.FileNameSpliter = fileSpliterBox.Text[0].ToString(); };
+            folderIdxBox.ValueChanged += (s, e) => { if (!syncing && cur != null) cur.FolderIndex = (int)e.Value; };
+            fileIdxBox.ValueChanged += (s, e) => { if (!syncing && cur != null) cur.FileNameIndex = (int)e.Value; };
+            enableCheck.CheckedChanged += (s, e) =>
+            {
+                if (syncing || cur == null) return;
+                cur.IsEnable = e.Value;
+                ConfigService.SaveTransform();
+            };
+
+            watchOpenBtn.Click += (s, e) =>
+            {
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = I18n.T("transitWatch") };
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                watchBox.Text = dlg.SelectedPath;
+                if (cur != null) cur.WatchPath = dlg.SelectedPath;
+            };
+
+            runBtn.Click += (s, e) =>
+            {
+                var cfg = cur;
+                if (cfg == null) return;
+                _ = System.Threading.Tasks.Task.Run(() => { try { new TransformAction { Config = cfg }.RunAction(); } catch { } });
+            };
+
+            saveBtn.Click += (s, e) =>
+            {
+                CommitFields();
+                ConfigService.SaveTransform();
+                App.RecreateTransits();
+            };
+
+            addCfgBtn.Click += (s, e) =>
+            {
+                var name = PromptTransitName();
+                if (name == null) return;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    MessageBox.Show(this, I18n.T("transitNameEmpty"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (ConfigService.Transforms.Any(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    MessageBox.Show(this, I18n.T("transitNameExists"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                CommitFields();
+                ConfigService.Transforms.Add(new TransformConfig { Name = name });
+                ConfigService.SaveTransform();
+                var newIndex = ConfigService.Transforms.Count - 1;
+                syncing = true;
+                nameCombo.Items.Add(name);
+                nameCombo.SelectedIndex = newIndex;
+                syncing = false;
+                LoadProfile(newIndex);
+            };
+
+            delCfgBtn.Click += (s, e) =>
+            {
+                if (cur == null) return;
+                if (ConfigService.Transforms.Count <= 1)
+                {
+                    MessageBox.Show(this, I18n.T("transitDeleteLast"), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                var idx = nameCombo.SelectedIndex;
+                if (idx < 0) return;
+                ConfigService.Transforms.Remove(cur);
+                ConfigService.SaveTransform();
+                App.RecreateTransits();
+                var newIndex = Math.Min(Math.Max(idx, 0), ConfigService.Transforms.Count - 1);
+                syncing = true;
+                nameCombo.Items.RemoveAt(idx);
+                nameCombo.SelectedIndex = newIndex;
+                syncing = false;
+                LoadProfile(newIndex);
+            };
+
+            langUpdaters.Add(() =>
+            {
+                nameLabel.Text = I18n.T("name");
+                addCfgBtn.Text = I18n.T("transitAdd");
+                delCfgBtn.Text = I18n.T("delete");
+                enableCheck.Text = I18n.T("transitEnable");
+                runBtn.Text = I18n.T("transitRun");
+                saveBtn.Text = I18n.T("saveApply");
+                watchLabel.Text = I18n.T("transitWatch");
+                watchOpenBtn.Text = I18n.T("transitOpen");
+                splitLabel.Text = I18n.T("transitSourceSplit");
+                folderIdxLabel.Text = I18n.T("transitFolderIdx");
+                fileIdxLabel.Text = I18n.T("transitFileIdx");
+                dirGroup.Text = I18n.T("transitFolderParts");
+                dirSplitLabel.Text = I18n.T("transitFolderSplit");
+                dirAddBtn.Text = I18n.T("transitAdd");
+                dirDelBtn.Text = I18n.T("delete");
+                dirClearBtn.Text = I18n.T("transitClear");
+                dirSrcLabel.Text = I18n.T("transitSourceIdx");
+                dirFmtLabel.Text = I18n.T("transitFormat");
+                dirGrid.Columns[1].HeaderText = I18n.T("transitPartType");
+                fileGroup.Text = I18n.T("transitFileParts");
+                fileSplitLabel.Text = I18n.T("transitFileSplit");
+                fileAddBtn.Text = I18n.T("transitAdd");
+                fileDelBtn.Text = I18n.T("delete");
+                fileClearBtn.Text = I18n.T("transitClear");
+                fileSrcLabel.Text = I18n.T("transitSourceIdx");
+                fileFmtLabel.Text = I18n.T("transitFormat");
+                fileGrid.Columns[1].HeaderText = I18n.T("transitPartType");
+                RebuildDir();
+                RebuildFile();
+            });
 
             scroll.Controls.Add(panel);
             return scroll;
         }
 
-        private static void RebuildDirGrid(DataGridView grid)
+        private static DataGridView MakePartGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                RowHeadersVisible = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                BackgroundColor = ThemeManager.Bg3,
+                ForeColor = ThemeManager.Fg,
+                BorderStyle = BorderStyle.None,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = ThemeManager.Bg3, ForeColor = ThemeManager.Fg },
+            };
+            grid.Columns.Add("colIdx", "#");
+            grid.Columns.Add("colType", I18n.T("transitPartType"));
+            grid.Columns[0].Width = 50;
+            grid.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            grid.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            return grid;
+        }
+
+        private static void RebuildDirGrid(DataGridView grid, TransformConfig cfg)
         {
             grid.Rows.Clear();
-            var parts = ConfigService.Transform.FolderPartList;
+            if (cfg == null) return;
+            var parts = cfg.FolderPartList;
             for (int i = 0; i < parts.Count; i++)
             {
                 var p = parts[i];
-                grid.Rows.Add(i, p.PartType == TransformPartType.DateTime ? "PC时间" : "名称", p.SourceIndex, p.Format);
+                grid.Rows.Add(i, p.PartType == TransformPartType.DateTime ? I18n.T("transitPartDateTime") : I18n.T("transitPartName"));
             }
         }
 
-        private static void RebuildFileGrid(DataGridView grid)
+        private static void RebuildFileGrid(DataGridView grid, TransformConfig cfg)
         {
             grid.Rows.Clear();
-            var parts = ConfigService.Transform.FileNamePartList;
+            if (cfg == null) return;
+            var parts = cfg.FileNamePartList;
             for (int i = 0; i < parts.Count; i++)
             {
                 var p = parts[i];
-                grid.Rows.Add(i, p.PartType == TransformPartType.DateTime ? "PC时间" : "名称", p.SourceIndex, p.Format);
+                grid.Rows.Add(i, p.PartType == TransformPartType.DateTime ? I18n.T("transitPartDateTime") : I18n.T("transitPartName"));
+            }
+        }
+
+        private string PromptTransitName()
+        {
+            using var dlg = new TransitNameDialog(I18n.T("transitAddName"), I18n.T("name"));
+            return dlg.ShowDialog(this) == DialogResult.OK ? dlg.Value : null;
+        }
+
+        private TransformPartType? PromptPartType()
+        {
+            using var dlg = new TransitPartDialog(I18n.T("transitAddPart"), I18n.T("transitPartTypeLabel"));
+            return dlg.ShowDialog(this) == DialogResult.OK ? dlg.Value : (TransformPartType?)null;
+        }
+
+        /// <summary>填写转存配置名称的小对话框。</summary>
+        private sealed class TransitNameDialog : Form
+        {
+            private readonly AntdUI.Input input;
+            public string Value { get; private set; }
+
+            public TransitNameDialog(string title, string label)
+            {
+                Text = title;
+                Size = new Size(380, 160);
+                StartPosition = FormStartPosition.CenterParent;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MinimizeBox = false;
+                MaximizeBox = false;
+                ShowInTaskbar = false;
+                BackColor = ThemeManager.Bg2;
+                ForeColor = ThemeManager.Fg;
+
+                var lbl = new AntdUI.Label { Text = label, AutoSize = true, Location = new Point(20, 26) };
+                input = new AntdUI.Input { Location = new Point(20, 54), Width = 320, Height = 30 };
+                var ok = new AntdUI.Button { Text = "OK", Location = new Point(260, 100), Width = 80, Height = 30 };
+                ok.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(input.Text)) return;
+                    Value = input.Text.Trim();
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+                Controls.Add(lbl);
+                Controls.Add(input);
+                Controls.Add(ok);
+            }
+        }
+
+        /// <summary>选择部件类型（名称 / PC时间）的小对话框。</summary>
+        private sealed class TransitPartDialog : Form
+        {
+            private readonly System.Windows.Forms.ComboBox typeCombo;
+            public TransformPartType Value => typeCombo.SelectedIndex == 1 ? TransformPartType.DateTime : TransformPartType.Name;
+
+            public TransitPartDialog(string title, string label)
+            {
+                Text = title;
+                Size = new Size(380, 160);
+                StartPosition = FormStartPosition.CenterParent;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MinimizeBox = false;
+                MaximizeBox = false;
+                ShowInTaskbar = false;
+                BackColor = ThemeManager.Bg2;
+                ForeColor = ThemeManager.Fg;
+
+                var lbl = new AntdUI.Label { Text = label, AutoSize = true, Location = new Point(20, 32) };
+                typeCombo = new System.Windows.Forms.ComboBox
+                {
+                    Location = new Point(80, 28),
+                    Width = 260,
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = ThemeManager.Bg3,
+                    ForeColor = ThemeManager.Fg,
+                };
+                typeCombo.Items.Add(I18n.T("transitPartName"));
+                typeCombo.Items.Add(I18n.T("transitPartDateTime"));
+                typeCombo.SelectedIndex = 0;
+                var ok = new AntdUI.Button { Text = "OK", Location = new Point(260, 100), Width = 80, Height = 30 };
+                ok.Click += (s, e) =>
+                {
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+                Controls.Add(lbl);
+                Controls.Add(typeCombo);
+                Controls.Add(ok);
             }
         }
 

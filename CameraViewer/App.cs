@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using AntdUI;
@@ -8,7 +9,8 @@ namespace CameraViewerDotnet
 {
     public static class App
     {
-        public static FileTransformer Transit { get; private set; }
+        /// <summary>每套文件中转配置对应一个 FileTransformer。</summary>
+        public static List<FileTransformer> Transits { get; } = new List<FileTransformer>();
         public static ImageCleaner Cleaner { get; private set; }
 
         [STAThread]
@@ -32,12 +34,7 @@ namespace CameraViewerDotnet
             ThemeManager.Apply(ConfigService.App.theme);
 
             // Init file transit + cleaner
-            Transit = new FileTransformer();
-            if (!string.IsNullOrEmpty(ConfigService.Transform.WatchPath) && ConfigService.Transform.IsEnable)
-            {
-                Transit.Init(ConfigService.Transform);
-                Transit.Start();
-            }
+            StartTransits();
             Cleaner = new ImageCleaner();
             if (ConfigService.Clean.IsEnable)
             {
@@ -47,18 +44,47 @@ namespace CameraViewerDotnet
 
             Application.ApplicationExit += (s, e) =>
             {
-                Transit?.Dispose();
+                StopTransits();
                 Cleaner?.Dispose();
             };
 
             Application.Run(new MainWindow());
         }
 
+        /// <summary>按当前配置列表重建所有中转监听器（保存/删除配置后调用）。</summary>
+        public static void RecreateTransits()
+        {
+            StopTransits();
+            StartTransits();
+        }
+
+        private static void StartTransits()
+        {
+            foreach (var cfg in ConfigService.Transforms)
+            {
+                if (!cfg.IsEnable || string.IsNullOrEmpty(cfg.WatchPath) || !System.IO.Directory.Exists(cfg.WatchPath))
+                    continue;
+                var transformer = new FileTransformer();
+                transformer.Init(cfg);
+                transformer.Start();
+                Transits.Add(transformer);
+            }
+        }
+
+        private static void StopTransits()
+        {
+            foreach (var t in Transits)
+            {
+                try { t.Dispose(); } catch { }
+            }
+            Transits.Clear();
+        }
+
         public static void CrashExit(Exception ex)
         {
             try
             {
-                Transit?.Dispose();
+                StopTransits();
                 Cleaner?.Dispose();
             }
             catch { }
