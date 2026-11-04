@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "r9/wtjIknKM=",
+  "success": true,
+  "projectFilePath": "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\CameraHelper.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Lenovo\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
+    "C:\\Users\\Lenovo\\.nuget\\packages\\system.memory\\4.5.4\\system.memory.4.5.4.nupkg.sha512",
+    "C:\\Users\\Lenovo\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
+    "C:\\Users\\Lenovo\\.nuget\\packages\\system.resources.extensions\\4.7.1\\system.resources.extensions.4.7.1.nupkg.sha512",
+    "C:\\Users\\Lenovo\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\4.5.3\\system.runtime.compilerservices.unsafe.4.5.3.nupkg.sha512"
+  ],
+  "logs": []
+}

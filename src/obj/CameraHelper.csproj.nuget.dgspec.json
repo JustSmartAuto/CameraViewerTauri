@@ -1,0 +1,64 @@
+{
+  "format": 1,
+  "restore": {
+    "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\CameraHelper.csproj": {}
+  },
+  "projects": {
+    "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\CameraHelper.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\CameraHelper.csproj",
+        "projectName": "CameraHelper",
+        "projectPath": "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\CameraHelper.csproj",
+        "packagesPath": "C:\\Users\\Lenovo\\.nuget\\packages\\",
+        "outputPath": "D:\\JustStupid\\CameraHelper相机显示_2606120922\\CameraHelperLens\\src\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Lenovo\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net472"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net472": {
+            "targetAlias": "net472",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net472": {
+          "targetAlias": "net472",
+          "dependencies": {
+            "System.Resources.Extensions": {
+              "target": "Package",
+              "version": "[4.7.1, )"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.316\\RuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
+        }
+      }
+    }
+  }
+}

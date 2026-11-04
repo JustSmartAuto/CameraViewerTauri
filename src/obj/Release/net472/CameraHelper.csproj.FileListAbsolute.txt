@@ -1,0 +1,6 @@
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\CameraHelper.csproj.AssemblyReference.cache
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\WebHMI.FormMain.resources
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\WebHMI.Properties.Resources.resources
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\CameraHelper.csproj.GenerateResource.cache
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\CameraHelper.GeneratedMSBuildEditorConfig.editorconfig
+D:\JustStupid\CameraHelper相机显示_2606120922\CameraHelperLens\src\obj\Release\net472\CameraHelper.csproj.CoreCompileInputs.cache
