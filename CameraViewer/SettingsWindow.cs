@@ -483,6 +483,7 @@ namespace CameraViewerDotnet
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             // 语言
             panel.Controls.Add(MakeLabel(I18n.T("languageSetting"), true), 0, 0);
@@ -594,6 +595,85 @@ namespace CameraViewerDotnet
                 dirBox.PlaceholderText = I18n.T("configDirPlaceholder");
                 tip.Text = I18n.T("configDirWarn");
             });
+
+            // 窗口与启动
+            var behaviorHeader = MakeLabel(I18n.T("windowStartup"), true);
+            behaviorHeader.Margin = new Padding(0, 16, 0, 4);
+            panel.Controls.Add(behaviorHeader, 0, 6);
+
+            var behaviorRow = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, WrapContents = true };
+
+            var topMostCheck = new AntdUI.Checkbox
+            {
+                Text = I18n.T("topMost"),
+                Checked = ConfigService.App.topMost,
+                AutoSizeMode = TAutoSize.Auto,
+                Margin = new Padding(0, 4, 24, 4),
+            };
+            topMostCheck.CheckedChanged += (s, e) =>
+            {
+                ConfigService.App.topMost = e.Value;
+                ConfigService.SaveApp();
+                var main = Application.OpenForms.OfType<MainWindow>().FirstOrDefault();
+                if (main != null) main.TopMost = e.Value;
+            };
+            behaviorRow.Controls.Add(topMostCheck);
+
+            var autoStartCheck = new AntdUI.Checkbox
+            {
+                Text = I18n.T("autoStart"),
+                Checked = ConfigService.App.autoStart,
+                AutoSizeMode = TAutoSize.Auto,
+                Margin = new Padding(0, 4, 12, 4),
+            };
+            autoStartCheck.CheckedChanged += (s, e) =>
+            {
+                try
+                {
+                    StartupManager.SetEnabled(e.Value);
+                    ConfigService.App.autoStart = e.Value;
+                    ConfigService.SaveApp();
+                }
+                catch (Exception ex)
+                {
+                    ConfigService.App.autoStart = false;
+                    ConfigService.SaveApp();
+                    autoStartCheck.Checked = false;
+                    MessageBox.Show(ex.Message, I18n.T("autoStartFailed"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            };
+            behaviorRow.Controls.Add(autoStartCheck);
+
+            var delayLabel = MakeLabel(I18n.T("startupDelay"));
+            delayLabel.Margin = new Padding(0, 10, 6, 0);
+            behaviorRow.Controls.Add(delayLabel);
+
+            var delayNum = new AntdUI.InputNumber
+            {
+                Width = 80,
+                Height = 30,
+                Minimum = 0,
+                Maximum = 60,
+                Increment = 1,
+                Value = ConfigService.App.startupDelay,
+            };
+            delayNum.ValueChanged += (s, e) =>
+            {
+                ConfigService.App.startupDelay = (int)e.Value;
+                ConfigService.SaveApp();
+            };
+            behaviorRow.Controls.Add(delayNum);
+
+            panel.Controls.Add(behaviorRow, 0, 7);
+
+            langUpdaters.Add(() =>
+            {
+                behaviorHeader.Text = I18n.T("windowStartup");
+                topMostCheck.Text = I18n.T("topMost");
+                autoStartCheck.Text = I18n.T("autoStart");
+                delayLabel.Text = I18n.T("startupDelay");
+            });
+
             return panel;
         }
 

@@ -66,6 +66,7 @@ namespace CameraViewerDotnet
             WindowState = FormWindowState.Maximized;
             MinimumSize = new Size(600, 400);
             Mode = ThemeManager.TAMode;
+            TopMost = ConfigService.App.topMost;
 
             // 标题栏：AntdUI.Window 不自绘标题栏，需用 PageHeader 提供标题/拖动/最小化/最大化/关闭
             header = new AntdUI.PageHeader

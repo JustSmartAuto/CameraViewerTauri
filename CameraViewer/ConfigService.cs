@@ -53,6 +53,12 @@ namespace CameraViewer
     {
         public string language { get; set; } = "zh";
         public string theme { get; set; } = "light";
+        // 窗口置顶
+        public bool topMost { get; set; } = false;
+        // 开机自动启动（shell:startup 快捷方式）
+        public bool autoStart { get; set; } = false;
+        // 开机启动延时（秒），仅 --auto-start 启动时生效
+        public int startupDelay { get; set; } = 1;
     }
 
     // ==================== File Transit ====================
@@ -251,6 +257,9 @@ namespace CameraViewer
                 {
                     language = node["language"]?.GetValue<string>() ?? "zh",
                     theme = node["theme"]?.GetValue<string>() ?? "light",
+                    topMost = node["topMost"]?.GetValue<bool>() ?? false,
+                    autoStart = node["autoStart"]?.GetValue<bool>() ?? false,
+                    startupDelay = Math.Clamp(node["startupDelay"]?.GetValue<int>() ?? 1, 0, 60),
                 };
             }
             catch { }

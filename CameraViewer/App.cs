@@ -30,6 +30,16 @@ namespace CameraViewerDotnet
             };
 
             ConfigService.Load();
+
+            // 开机自启快捷方式带 --auto-start 参数，按配置延时启动（默认 1 秒）
+            foreach (var arg in Environment.GetCommandLineArgs())
+            {
+                if (!string.Equals(arg, StartupManager.AutoStartArgument, StringComparison.OrdinalIgnoreCase)) continue;
+                var delay = Math.Clamp(ConfigService.App.startupDelay, 0, 60);
+                if (delay > 0) System.Threading.Thread.Sleep(delay * 1000);
+                break;
+            }
+
             I18n.Language = ConfigService.App.language == "en" ? "en" : "zh";
             ThemeManager.Apply(ConfigService.App.theme);
 
