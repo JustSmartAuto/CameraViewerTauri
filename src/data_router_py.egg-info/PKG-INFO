@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: data-router-py
+Version: 26.11.4.1
+Summary: DataRouterPy 文件转存器（监控目录 + 文件名拆分重组 + 按规则中转落位）
+Requires-Python: >=3.13
