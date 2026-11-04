@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using AntdUI;
@@ -30,6 +31,11 @@ namespace CameraViewerDotnet
             };
 
             ConfigService.Load();
+
+            // 文件转存日志初始化（放在 logs/ 目录，跟随配置目录）
+            var cfgDir = ConfigService.ConfigDir;
+            LogHelper.Init(Path.Combine(cfgDir, "logs"));
+            LogHelper.Info($"程序启动，配置目录 {cfgDir}");
 
             // 开机自启快捷方式带 --auto-start 参数，按配置延时启动（默认 1 秒）
             foreach (var arg in Environment.GetCommandLineArgs())

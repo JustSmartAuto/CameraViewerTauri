@@ -114,7 +114,12 @@ namespace CameraViewerDotnet
                 switch (id)
                 {
                     case "settings":
-                        new SettingsWindow().ShowDialog(this);
+                        {
+                            var saved = TopMost;
+                            TopMost = false;
+                            try { new SettingsWindow().ShowDialog(this); }
+                            finally { TopMost = saved; }
+                        }
                         break;
                     case "themeLight":
                         ThemeManager.Apply("light");
@@ -137,7 +142,12 @@ namespace CameraViewerDotnet
                         ConfigService.App.language = "en"; ConfigService.SaveApp();
                         break;
                     case "about":
-                        new AboutWindow().ShowDialog(this);
+                        {
+                            var saved = TopMost;
+                            TopMost = false;
+                            try { new AboutWindow().ShowDialog(this); }
+                            finally { TopMost = saved; }
+                        }
                         break;
                 }
             };
