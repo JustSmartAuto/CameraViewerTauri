@@ -10,8 +10,8 @@
     <AssemblyName>CameraViewerDotnet</AssemblyName>
     <RootNamespace>CameraViewerDotnet</RootNamespace>
     <Product>CameraViewerDotnet</Product>
-    <Version>26.11.2.1</Version>
-    <InformationalVersion>26.11.2.1</InformationalVersion>
+    <Version>26.11.4.1</Version>
+    <InformationalVersion>26.11.4.1</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>CameraViewerDotnet.App</StartupObject>
     <ApplicationIcon>..\assets\camera-viewer.ico</ApplicationIcon>
