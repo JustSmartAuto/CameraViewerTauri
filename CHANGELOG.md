@@ -5,6 +5,125 @@
 
 ---
 
+## 2026-11-04　版本 26.11.4.1
+
+### 新功能：文件中转多配置与部件编辑
+
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：`TransformConfig` 由单对象升级为多套配置数组（`Transforms`），兼容旧版单对象格式；新增 `Name` / `IsEnable` / `WatchPath` / `SourceSpliter` / `FolderIndex` / `FileNameIndex` / `FolderSpliter` / `FileNameSpliter` / `FolderPartList` / `FileNamePartList`。
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：文件转存页新增配置名称下拉 + 添加 / 删除 / 保存应用；文件夹与文件名称部件编辑器改为 DataGridView，选中行后编辑原始序号或 PC 时间格式，支持添加 / 删除 / 清空与类型选择。
+- [CameraViewer/App.cs](CameraViewer/App.cs)：`Transits` 按配置逐套创建 `FileTransformer`，保存 / 删除配置后统一重建监听器（`RecreateTransits`）。
+
+### 新功能：窗口置顶与开机自动启动
+
+- 新增 [CameraViewer/StartupManager.cs](CameraViewer/StartupManager.cs)：在 `shell:startup` 创建 / 删除快捷方式，开机自启时带 `--auto-start` 参数。
+- [CameraViewer/App.cs](CameraViewer/App.cs)：识别 `--auto-start` 参数后按 `startupDelay`（0～60 秒，默认 1 秒）延时启动。
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)、[CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：软件设置页新增「窗口置顶」「开机自动启动」两项并持久化。
+
+### 修复：置顶状态下对话框被遮挡
+
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)：主窗口置顶时打开设置 / 关于对话框会被主窗口盖住，改为 `ShowDialog` 前后临时取消 `TopMost`，结束后在 `finally` 中恢复。
+
+### 改进：文件转存事件日志
+
+- 新增 [CameraViewer/LogHelper.cs](CameraViewer/LogHelper.cs)：日志写入配置目录下 `logs/`，程序启动即初始化。
+- [CameraViewer/FileTransformer.cs](CameraViewer/FileTransformer.cs)、[CameraViewer/TransformAction.cs](CameraViewer/TransformAction.cs)：文件创建、等待稳定、目录 / 文件名拆分、移动成功与失败各阶段写日志，排查「无反应」类问题更直观。
+- [CameraViewer/I18n.cs](CameraViewer/I18n.cs)：补齐新增设置项的中英文键。
+- 版本号 26.11.2.1 → 26.11.4.1（`Version` 与 `InformationalVersion` 同步）。
+- 验证：`dotnet build`（主程序）0 警告 0 错误；产物 `dist/CameraViewerDotnet_202611041033.exe` 已发布至 GitHub Release `v26.11.4.1`。
+
+---
+
+## 2026-11-03　版本 26.11.2.1
+
+### 修复：CogSocket 真机取图（三个阻塞问题）
+
+- [CameraViewer/CogSocketCamera.cs](CameraViewer/CogSocketCamera.cs)：默认端口改为 80，连接失败自动回退 8087；`openSession` 只识别范围形式，单单元格标识自动转换为 `A21 → A21:A21`；标识单元格返回浮点值时归一化为整数（`41.0 → 41`）再与绑定值匹配。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：配置不完整（`conn=cogsocket` 但缺少 `subGridCount` / `identifierCell` / `cellBindings`）时显示提示文案，不再回退 Http HMI 页面。
+
+### 新功能：一台相机共享一条 CogSocket 连接
+
+- 新增 [CameraViewer/CogSocketManager.cs](CameraViewer/CogSocketManager.cs)：相同 `IP:Port` 的多个 CameraCell 共用一条 WebSocket（引用计数，最后一个 Cell 释放后关闭）；按所有订阅者的 `identifierCell` 并集执行 `openSession`，新增标识单元格时自动重连补齐；结果按标识单元格分发，各 Cell 再执行 `取值 → 槽位`。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：顶部刷新只重建该相机的共享连接，同相机其他 Cell 自动恢复接收。
+
+### 改进：先缩略图后原图
+
+- [CameraViewer/CogSocketCamera.cs](CameraViewer/CogSocketCamera.cs)：取图改为先 `HTTP GET ?sz=640` 拿缩略图立即上屏，`ready` 后在后台补取原图，成功则原位替换、失败保留缩略图（相机仅保留最近几张图，晚到原图会 404）。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)、[CameraViewer/CogSocketManager.cs](CameraViewer/CogSocketManager.cs)：按标识单元格记录最近图像地址，丢弃同图的滞后事件；最小槽位取值到达视为新一轮产品，先清空所有子网格（含叠加层图像与 SVG），避免新旧产品混淆。
+
+### 新功能：产品图 / 叠加图 / 网页 三视图
+
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：子网格顶部新增「产品图」「叠加图」「网页」三个按钮，三选一互斥，当前模式以主色高亮，语言切换时同步文字。
+- **叠加图**：每个槽位一个 WebView2 渲染该次拍照的 SVG 图层；SVG 本身无 `viewBox`，前端注入 `viewBox="0 0 原图宽 原图高"` 与 `preserveAspectRatio="none"`，与产品图 `Zoom` 行为一致；新增「适合」按钮复位，滚轮以鼠标位置为中心缩放（0.1×～20×），左键拖动平移；切换模式或新拍照时保留缩放与位置。
+- **网页**：隐藏全部槽位，整个单元格加载该相机 HMI 页面（与 `conn=http` 相同），切回其他模式保留已加载页面；网页模式点刷新会同时重建订阅并重载页面。
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：视图模式按相机写入 `CameraConfig.json` 的 `viewMode`（`product` / `overlay` / `web`），重启自动恢复。
+
+### 新功能：历史胶片条
+
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：`CameraItem` 新增 `enableHistory`（默认 `false`）与 `historyCount`（4～10，默认 6），反序列化时做范围校验。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：开启后子网格底部显示历史渲染图，按胶片排版从左到右时间降序；图片不可点击，鼠标悬浮时在屏幕中央弹出大图预览，移开自动消失；使用 `ConcurrentQueue` 缓存历史截图并随控件释放清理。
+- [CameraViewer/AntIcon.cs](CameraViewer/AntIcon.cs)：新增 `History` / `Camera` / `Picture` / `Fullscreen` 图标常量。
+
+### 改进：交互与按钮
+
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：叠加图模式的产品图渲染由 `img` 标签改为 `background-image`，与 SVG 叠加层坐标完全对齐，缩放 / 拖动时底部图片同步跟随。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：产品图改用自定义 `InteractiveImagePanel`（替代 PictureBox），统一实现等比居中适配、以鼠标位置为中心的滚轮缩放、左键拖动。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：CogSocket 子网格操作按钮仅显示图标以节省排版，悬浮显示提示文本，提示跟随界面语言切换。
+
+### 修复：网页空白与叠加层交互失效
+
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：动态创建的 WebView2 未显式调用 `EnsureCoreWebView2Async()`，导致不触发 `CoreWebView2InitializationCompleted`、网页模式空白 → 补上显式初始化。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：叠加层 HTML 中 `img` / `svg` 默认拦截鼠标事件，导致滚轮缩放与拖动失效 → 统一设置 `pointer-events: none` 透传。
+
+### 其它
+
+- 更换应用图标：新增 [assets/beos-logo.html](assets/beos-logo.html) 与 [assets/gen_logo.py](assets/gen_logo.py)，生成 BeOS 风格圆角毛玻璃 logo 及 11 种尺寸的 `assets/camera-viewer.ico`；[CameraViewer/CameraViewer.csproj](CameraViewer/CameraViewer.csproj) 与 [CameraViewer.Launcher/CameraViewer.Launcher.csproj](CameraViewer.Launcher/CameraViewer.Launcher.csproj) 的 `ApplicationIcon` 同步指向新图标。
+- [README.md](README.md)：对齐 `CellBinding` 重构与真实 GigE / CogSocket 现状。
+- 版本号未单独递增，随 2026-11-04 的 26.11.4.1 一并发布。
+
+---
+
+## 2026-11-02　版本 26.11.2.1
+
+### 改进：网格布局 16 → 36
+
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)、[CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)、[CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：相机数量上限 16 → 36，新增 `20 / 24 / 25 / 30 / 36` 布局预设。
+
+### 改进：BeOS teal/chrome 主题与菜单栏
+
+- [CameraViewer/ThemeManager.cs](CameraViewer/ThemeManager.cs)：新增 BeOS teal/chrome 主题（窗口细边框 + teal/cream 调色），与明亮 / 暗黑主题并列。
+- [CameraViewer/MainWindow.cs](CameraViewer/MainWindow.cs)、[CameraViewer/I18n.cs](CameraViewer/I18n.cs)：工具栏改为 `PageHeader` + `AntdUI.Menu` 水平菜单（设置 / 主题 / 语言 / 关于）。
+
+### 新功能：三种连接方式与 CogSocket 子网格
+
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：相机配置新增连接方式 `Http` / `CogSocket` / `GigE`；GigE 仅保存序列号与曝光，设置页不提供 URL 输入（原生取流未接入，沿用旧 `ip` 时按 WebView2 加载）。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：CogSocket 子网格拆分——`identifierCell`（拍照标识单元格，如 `A21`）+ `subGridCount`（`1/2/4/6/8`，对应 1×1 / 2×1 / 2×2 / 3×2 / 4×2）+ `cellBindings`（标识取值 → 槽位）；槽位左上角显示绑定的取值，未绑定时显示 `#槽位号`；`CellBinding` 重构替代原 `cellSubscribe` 字符串，兼容旧配置时取第一个单元格名作为 `identifierCell`。
+- 新增 [CameraViewer/CogSocketCamera.cs](CameraViewer/CogSocketCamera.cs)：`System.Net.WebSockets` + `HttpClient` 实现 WebSocket 客户端与 `CogSocketException`。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：子网格由 `TableLayoutPanel` + `PictureBox` 渲染，拍照结果到达时按取值填入对应槽位。
+
+### 修复：CogSocketCamera 按实测协议重写
+
+- [CameraViewer/CogSocketCamera.cs](CameraViewer/CogSocketCamera.cs)：完全对齐 [CameraCellMonitor](https://github.com/JustSmartAuto/CameraCellMonitor) 实测协议——`$type` / JSON-RPC、`/hello`（老固件可能拒绝，非致命）、detect root（`cam0/hmi/info` 失败回退 `system/info`）、`openSession`、`login`（非致命）、订阅 `resultChanged`、每 15 秒 `keepAlive`、每次回调末尾发 `ready` 触发下一帧、图像走 `HTTP GET`（支持 `?sz=` 缩放）。
+- [CameraViewer/CameraCell.cs](CameraViewer/CameraCell.cs)：按 `CellBinding` 重构子网格取值映射，拍照周期（最小槽位取值）到达时清空全部子网格。
+
+### 新功能：文件中转与存图清理（复刻 CameraHelperLens）
+
+- 新增 [CameraViewer/FileTransformer.cs](CameraViewer/FileTransformer.cs)、[CameraViewer/ActionQueueWorker.cs](CameraViewer/ActionQueueWorker.cs)、[CameraViewer/TransformAction.cs](CameraViewer/TransformAction.cs)、[CameraViewer/TransformPart.cs](CameraViewer/TransformPart.cs)：`FileSystemWatcher` 监听 → `ConcurrentQueue + ManualResetEvent` 串行消费（替换旧版 `Thread.Abort()`）→ 等待文件写入稳定 → 按配置拆分文件夹 / 文件名 → `File.Move`。
+- 新增 [CameraViewer/ImageCleaner.cs](CameraViewer/ImageCleaner.cs)：`Timer` 定时扫描，按保留天数或剩余空间阈值删除，并清理空目录，使用 `CancellationTokenSource` 取消。
+- [CameraViewer/SettingsWindow.cs](CameraViewer/SettingsWindow.cs)：新增「文件转存」与「存图清理」两个标签页。
+- [CameraViewer/App.cs](CameraViewer/App.cs)：启动时初始化逐套中转监听器与清理器，退出时统一释放。
+
+### 新功能：多开与便携模式
+
+- [CameraViewer/ConfigService.cs](CameraViewer/ConfigService.cs)：exe 目录 `bootstrap.json` 写入 `{"configDir":"..."}` 即切换配置目录；exe 旁放置 `portable.txt` 启用便携模式（配置存 exe 旁 `Configs\`），否则存 `%LOCALAPPDATA%\CameraViewerDotnet\`。
+
+### 其它
+
+- [CameraViewer/CameraViewer.csproj](CameraViewer/CameraViewer.csproj)：版本号 26.11.2.1，新增 `InformationalVersion` 供关于页显示。
+- [README.md](README.md)：全面更新三种连接方式、CogSocket 子网格、文件中转 / 存图清理、bootstrap 多开与 CogSocket 协议流程图。
+- 新增参考资料：[CogSocket&WebApi.md](CogSocket&WebApi.md)、`reference/` 下康耐视 3D 电子表格函数参考与 retro 设计系统素材。
+
+---
+
 ## 2026-09-17　版本 26.9.17.18
 
 ### 重构：UI 框架从 WPF(HandyControls) 迁移到 WinForms + AntdUI
