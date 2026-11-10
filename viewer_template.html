@@ -53,12 +53,14 @@
 </div>
 <script>/*__THREE__*/</script>
 <script>/*__ORBIT__*/</script>
+<script>/*__TAKO__*/</script>
 <script>
 (function(){
 "use strict";
 var MAGIC=0x50FACE11, HEADER=0x48, REC=0x3C00;
 var scene,camera,renderer,controls,cloudPts=null,gridHelper,axesHelper;
 var fileBuf=null, fileName="";
+var takoViewer=null,takoScene=null,takoMesh=null,takoInitPromise=null,usingTako=false;
 
 function init(){
   scene=new THREE.Scene();
@@ -73,18 +75,41 @@ function init(){
   scene.add(gridHelper);
   axesHelper=new THREE.AxesHelper(50);
   scene.add(axesHelper);
-  addEventListener('resize',function(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
-  (function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera);})();
+  addEventListener('resize',function(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);if(takoViewer)takoViewer.resize(innerWidth,innerHeight);});
+  (function loop(){requestAnimationFrame(loop);controls.update();if(!usingTako)renderer.render(scene,camera);})();
   setView(true);
 }
 function setView(init){
+  if(usingTako&&takoScene){takoScene.fitView();return;}
   camera.position.set(80,-120,90);
   camera.up.set(0,0,1);
   controls.target.set(0,0,0);
   controls.update();
 }
 document.getElementById('reset').onclick=function(){setView();};
-document.getElementById('top').onclick=function(){camera.position.set(0.01,0.01,200);controls.target.set(0,0,0);controls.update();};
+document.getElementById('top').onclick=function(){setView();};
+
+function initTako(){
+  if(!takoInitPromise){
+    setStatus("正在初始化内嵌 Tako/WASM…");
+    takoInitPromise=Tako({containerId:'app',fitToContainer:true}).then(function(viewer){
+      takoViewer=viewer;takoScene=viewer.getScene();return viewer;
+    });
+  }
+  return takoInitPromise;
+}
+function renderWithTako(buf){
+  return initTako().then(function(){
+    if(takoMesh){takoScene.deleteNode(takoMesh.nodeId);takoMesh.model.delete();takoMesh=null;}
+    var model=new takoViewer.QuadMesh();
+    model.importPacket(new Uint8Array(buf));
+    var nodeId=takoScene.addNode(model);
+    takoMesh={model:model,nodeId:nodeId};
+    usingTako=true;renderer.domElement.style.display='none';
+    takoViewer.canvas.style.display='block';takoScene.fitView();
+    return model.isComplete();
+  });
+}
 
 /* ---------- RAW 解析 ---------- */
 function u32(dv,o){return dv.getUint32(o,true);}
@@ -158,19 +183,27 @@ function show(buf){
   fileBuf=buf;
   var info=parseInfo(buf);
   document.getElementById('info').textContent=info.text;
-  if(!info.ok){setStatus("解析失败：不是有效的 Cognex RAW 文件");return;}
+  if(!info.ok){setStatus("解析失败：不是有效的 Cognex RAW 文件");return Promise.resolve();}
   var mode=document.getElementById('mode').value;
   if(mode==="auto"){
-    // 自动：先尝试 float32 三元组，点数过少则回退 16.16 定点
-    var r=extractPoints(buf,"f32",HEADER,parseFloat(document.getElementById('vmax').value),parseInt(document.getElementById('maxpts').value));
-    if(!r||r.count<500)r=extractPoints(buf,"fp1616",HEADER,1e6,parseInt(document.getElementById('maxpts').value));
-    render(r,"自动模式");
-  }else{
-    var off=parseInt(document.getElementById('off').value);
-    if(!isFinite(off))off=HEADER;
-    var vm=parseFloat(document.getElementById('vmax').value);
-    render(extractPoints(buf,mode,off,vm,parseInt(document.getElementById('maxpts').value)),mode);
+    setStatus("正在使用内嵌 Tako/WASM 解析 RAW…");
+    return renderWithTako(buf).then(function(complete){
+      setStatus("Tako/WASM：RAW 解析完成"+(complete?"":"（数据包不完整）"));
+    }).catch(function(error){
+      usingTako=false;renderer.domElement.style.display='block';
+      if(takoViewer)takoViewer.canvas.style.display='none';
+      var r=extractPoints(buf,"f32",HEADER,parseFloat(document.getElementById('vmax').value),parseInt(document.getElementById('maxpts').value));
+      if(!r||r.count<500)r=extractPoints(buf,"fp1616",HEADER,1e6,parseInt(document.getElementById('maxpts').value));
+      render(r,"Tako/WASM 不支持此 RAW 容器，已回退为候选点");
+    });
   }
+  usingTako=false;renderer.domElement.style.display='block';
+  if(takoViewer)takoViewer.canvas.style.display='none';
+  var off=parseInt(document.getElementById('off').value);
+  if(!isFinite(off))off=HEADER;
+  var vm=parseFloat(document.getElementById('vmax').value);
+  render(extractPoints(buf,mode,off,vm,parseInt(document.getElementById('maxpts').value)),mode);
+  return Promise.resolve();
 }
 function render(r,tag){
   if(cloudPts){scene.remove(cloudPts);cloudPts.geometry.dispose();cloudPts.material.dispose();cloudPts=null;}
