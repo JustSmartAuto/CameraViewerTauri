@@ -166,7 +166,8 @@ function show(buf){
     if(!r||r.count<500)r=extractPoints(buf,"fp1616",HEADER,1e6,parseInt(document.getElementById('maxpts').value));
     render(r,"自动模式");
   }else{
-    var off=parseInt(document.getElementById('off').value)||HEADER;
+    var off=parseInt(document.getElementById('off').value);
+    if(!isFinite(off))off=HEADER;
     var vm=parseFloat(document.getElementById('vmax').value);
     render(extractPoints(buf,mode,off,vm,parseInt(document.getElementById('maxpts').value)),mode);
   }
@@ -183,7 +184,7 @@ function render(r,tag){
     colors[i*3]=t; colors[i*3+1]=0.35; colors[i*3+2]=1-t; // 蓝->红 按高度
   }
   g.setAttribute('color',new THREE.BufferAttribute(colors,3));
-  var m=new THREE.PointsMaterial({size:1.2,vertexColors:true,sizeAttenuation:true});
+  var m=new THREE.PointsMaterial({size:2,vertexColors:true,sizeAttenuation:false});
   cloudPts=new THREE.Points(g,m);
   scene.add(cloudPts);
   // 自动缩放

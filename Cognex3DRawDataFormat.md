@@ -13,6 +13,7 @@
 | 2026-10-23 | v2 | 5 件 NG 样本交叉验证，定位记录周期 0x3C00 |
 | 2026-10-27 | v3 | **pair-stream 解码公式确认**（段基址 + 0x04000000 修正）；**ILSpy 逆向**验证 managed 层无文件解析代码、扫描记录为 opaque byte[]；修正头部字段偏移错误 |
 | 2026-10-27 | v4 | 新增第 9 节：**L38 固件备份 `.bak` 容器结构**（v4 明文 JSON 清单 + 加密载荷），含 JSON 清单字段表、容器布局、加密判定依据、SDK 读取路径验证与 REA 工具链限制 |
+| 2026-11-10 | v5 | 新增第 10 节：**WebHMI 3D 数据解析**，依据 `Framework.js.gz` 明确点云/网格 v0、v1 与 QuadMesh v1 的外层协议、载荷布局、下载流程及 WASM 边界；修正“Web 端完全不解析”的表述 |
 
 ## 1. 文件组总体说明
 
@@ -464,6 +465,131 @@ REA 对 Cognex **托管程序集**工作正常（`rea inspect-managed-artifact C
 - 对 In-Sight Emulator 25.3.0 `Runtime` 目录下全部 61 个可执行二进制复扫：`11 FA CE 50`（RAW magic）命中 **0**、`QuadMeshData` 命中 **0** → Windows 侧固件运行时不带 3D RAW 解析器。
 - 因此若需拿到 RAW 扫描记录的内部编码（第 8 节第 3 条遗留问题），可行路径只有：**(a)** 解密本备份取出相机侧应用/固件，或 **(b)** 取得未加密的固件升级包（非备份），在 Linux/WSL 环境下用 `binwalk`/`unblob`/Ghidra 分析。
 
+## 10. WebHMI 的 3D 数据解析方法（`Framework.js.gz` 实证）
+
+### 10.1 适用范围与解析边界
+
+WebHMI 在 `Framework.js.gz` 中提供了 `Controls/Geometry3D/3DDataParsers/Cjs3DDataParser`。该解析器消费的是 HTTP 请求返回的 `ArrayBuffer`，识别以下三类**外层数据包**：
+
+| 类型 | magic（LE u32） | 文件字节序 | 支持的版本 | 解析结果 |
+|---|---:|---|---:|---|
+| 点云或三角网格 | `0xB0B15BAD` | `AD 5B B1 B0` | 0、1 | `CjsPointCloud` 或 `CjsMesh` |
+| QuadMesh | `0xB0B15D11` | `11 5D B1 B0` | 1 | `CjsQuadMeshData`（opaque packet） |
+
+这些 magic 与第 2 节落盘 RAW 容器的 `0x50FACE11` **不同**。因此不能把 WebHMI 的 20/24 字节头直接套到 `.raw` 文件上；WebHMI 揭示的是设备 HTTP 接口输出的 3D 数据包格式，而不是对落盘 RAW 记录区的完整解码。
+
+解析器的职责边界也很明确：
+
+- 点云/网格包由 JavaScript 直接还原为顶点数组和三角形索引数组；
+- QuadMesh 包只剥离外层头，载荷保持为 `Uint8Array`，最终调用 `takoweb.wasm` 的 `importPacket()`；
+- 因而第 2.3 节所说的 QuadMesh/RAW 内部记录仍需由 native/WASM 层解释，WebHMI 并未公开其逐点编码。
+
+### 10.2 点云/网格 v0：20 字节头
+
+| 偏移 | 类型 | 字段 | 含义 |
+|---:|---|---|---|
+| `0x00` | LE u32 | `magic` | 必须为 `0xB0B15BAD` |
+| `0x04` | LE u32 | `version` | `0` |
+| `0x08` | LE u32 | `headerSize` | 必须为 `20` |
+| `0x0C` | LE u32 | `numPoints` | 顶点数，必须大于 0 |
+| `0x10` | LE u32 | `numTriangleIndices` | 三角形索引总数，不是三角形数量 |
+| `0x14` | — | `vertices` | 连续 `3 × numPoints` 个 float32，按 `(x,y,z)` 交错排列 |
+| `0x14 + 12N` | — | `triangleIndices` | 连续 `numTriangleIndices` 个 u32，其中 `N = numPoints` |
+
+最小预期包长为：
+
+```text
+20 + 12 × numPoints + 4 × numTriangleIndices
+```
+
+当 `numTriangleIndices == 0` 时构造 `CjsPointCloud`；否则构造 `CjsMesh(vertices, triangleIndices, false)`。索引按三角形列表使用，所以正常网格中索引数通常应为 3 的倍数；原解析器本身未显式检查这一条件。
+
+### 10.3 点云/网格 v1：24 字节头
+
+v1 的数据布局与 v0 相同，仅多一个被读取但未使用的 u32：
+
+| 偏移 | 类型 | 字段 | 含义 |
+|---:|---|---|---|
+| `0x00` | LE u32 | `magic` | `0xB0B15BAD` |
+| `0x04` | LE u32 | `version` | `1` |
+| `0x08` | LE u32 | `headerSize` | 必须为 `24` |
+| `0x0C` | LE u32 | `numPoints` | 顶点数，必须大于 0 |
+| `0x10` | LE u32 | `numTriangleIndices` | 索引总数 |
+| `0x14` | LE u32 | 未命名字段 | JavaScript 读取后丢弃，语义未知 |
+| `0x18` | — | `vertices` | `3 × numPoints` 个 float32 |
+| `0x18 + 12N` | — | `triangleIndices` | `numTriangleIndices` 个 u32 |
+
+最小预期包长为：
+
+```text
+24 + 12 × numPoints + 4 × numTriangleIndices
+```
+
+实现注意：代码用 `DataView.getUint32(..., true)` 读取头，但用 `Float32Array`/`Uint32Array` 视图读取载荷。因此载荷在目标平台上按本机小端解释；在常见浏览器平台上等价于 LE float32/u32。
+
+### 10.4 QuadMesh v1：20 字节外层头
+
+| 偏移 | 类型 | 字段 | 含义 |
+|---:|---|---|---|
+| `0x00` | LE u32 | `magic` | 必须为 `0xB0B15D11` |
+| `0x04` | LE u32 | `version` | 仅支持 `1` |
+| `0x08` | LE u32 | `headerSize` | 必须为 `20` |
+| `0x0C` | LE u32 | 未命名字段 | JavaScript 读取后丢弃，语义未知 |
+| `0x10` | LE u32 | `packetSize` | QuadMesh packet 的字节数 |
+| `0x14` | — | `packet` | 长度 `packetSize` 的 opaque 字节串 |
+
+JavaScript 只执行：
+
+```javascript
+const blob = new Uint8Array(dataView.buffer, 20, packetSize);
+return new CjsQuadMeshData(blob);
+```
+
+它不把 packet 当成 float32 顶点流，也未根据 `packetSize` 推导点数或网格尺寸。若要独立导出 QuadMesh 点云，下一步应分析 `takoweb.wasm` 的 `importPacket`，而不是沿用第 3 节针对 RAW 标定前缀的 pair-stream 公式。
+
+### 10.5 QuadMesh 的 HTTP 获取与显示流程
+
+`CjsQuadMeshHandler` 以某个点云资源 URL 为 `baseUrl`，请求以下派生资源：
+
+| 请求 | 返回格式 | 用途 |
+|---|---|---|
+| `baseUrl?format=quadmesh1` | QuadMesh v1 二进制包 | 低分辨率 packet，优先加载 |
+| `baseUrl?format=quadmesh2` | QuadMesh v1 二进制包 | 高分辨率 packet，低分辨率导入后仍不完整时加载 |
+| `baseUrl?format=greyscaleTexture` | 浏览器可解码图像 | 转为 RGBA 字节，用作网格纹理 |
+| `baseUrl?format=imageTransformation` | 连续 float64 | 图像到网格的变换数据 |
+| `baseUrl/approximateResolution` | 含 3 个数值的 JSON 数组 | 近似 X/Y/Z 分辨率；仅 X、Y 均大于 0 时保留 |
+
+显示过程为：
+
+1. 并行下载低分辨率 QuadMesh、可选纹理、可选图像变换和近似分辨率；
+2. 用 `Cjs3DDataParser` 验证外层头并取得低分辨率 packet；
+3. 创建 Tako/WASM QuadMesh，按需设置纹理及变换；
+4. 调用 `importPacket(lowRes.Blob)`；
+5. 若 `isComplete()` 仍为 false，再下载并导入 `highRes.Blob`。
+
+这也说明 `quadmesh1` 与 `quadmesh2` 是同一显示对象的增量/分辨率数据包，不能假设它们各自都是完整、独立的顶点数组。
+
+### 10.6 辅助 Blob 格式
+
+同一文件中的 `CjsBlobParser` 还解析一种无 magic、无版本的简单点集：
+
+```text
+offset 0x00: LE u32 numPoints
+offset 0x04: numPoints × { LE float32 x, LE float32 y, LE float32 z }
+```
+
+每点固定 12 字节，预期总长为 `4 + 12 × numPoints`。它用于位置/中心点等辅助图形，不应与 `Cjs3DDataParser` 的点云包或 QuadMesh packet 混淆。
+
+### 10.7 与第 2–8 节结论的关系
+
+WebHMI 代码证明“3D 显示链路中存在 JavaScript 外层解析器”，因此更准确的表述是：
+
+- **落盘 `.raw`（magic `0x50FACE11`）的扫描记录**：仍未由 WebHMI JavaScript 解码；
+- **HTTP 点云/网格包（magic `0xB0B15BAD`）**：顶点与索引格式已完全明确；
+- **HTTP QuadMesh 包（magic `0xB0B15D11`）**：外层头已明确，packet 内部由 WASM 解码。
+
+三者属于同一 3D 显示/数据体系中的不同封装层，不能因 magic 或用途不同而相互替代。
+
 ---
 
-*分析方法：Python struct 逐字节解析 + 多文件 diff + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4*
+*分析方法：Python struct 逐字节解析 + 多文件 diff + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析*
