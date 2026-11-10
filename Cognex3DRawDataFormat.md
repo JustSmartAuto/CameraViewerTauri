@@ -14,6 +14,7 @@
 | 2026-10-27 | v3 | **pair-stream 解码公式确认**（段基址 + 0x04000000 修正）；**ILSpy 逆向**验证 managed 层无文件解析代码、扫描记录为 opaque byte[]；修正头部字段偏移错误 |
 | 2026-10-27 | v4 | 新增第 9 节：**L38 固件备份 `.bak` 容器结构**（v4 明文 JSON 清单 + 加密载荷），含 JSON 清单字段表、容器布局、加密判定依据、SDK 读取路径验证与 REA 工具链限制 |
 | 2026-11-10 | v5 | 新增第 10 节：**WebHMI 3D 数据解析**，依据 `Framework.js.gz` 明确点云/网格 v0、v1 与 QuadMesh v1 的外层协议、载荷布局、下载流程及 WASM 边界；修正“Web 端完全不解析”的表述 |
+| 2026-11-10 | v6 | 新增第 11 节：**CognexLogo RAW↔PCD 真值对照**，确认 RAW 内 `_positions0` 的 350,000 个 LE float32 XYZ 与导出 PCD 载荷逐字节一致，定位 `_grey80`、尾部宽高及分辨率字段；证明至少一种 v41 RAW 变体可直接提取规则网格点云 |
 
 ## 1. 文件组总体说明
 
@@ -590,6 +591,130 @@ WebHMI 代码证明“3D 显示链路中存在 JavaScript 外层解析器”，�
 
 三者属于同一 3D 显示/数据体系中的不同封装层，不能因 magic 或用途不同而相互替代。
 
+## 11. CognexLogo RAW ↔ PCD 真值对照（已逐字节验证）
+
+### 11.1 样本与结论
+
+通过 Cognex 官方隐藏函数 `SavePointCloud()` 将 `CognexLogo.raw` 导出为 `CognexLogo.pcd`，获得了一组同源真值样本：
+
+| 文件 | 大小 | 内容 |
+|---|---:|---|
+| `CognexLogo.raw` | 16,660,441 B | v41 RAW，magic 仍为 `0x50FACE11` |
+| `CognexLogo.pcd` | 4,200,095 B | PCD v0.7 二进制点云，95 B 文本头 + 4,200,000 B 载荷 |
+
+**核心结论：PCD 的 4,200,000 B 点云载荷在 RAW 中从 `0x558A1` 开始原样连续存储，二者逐字节完全相同。** 载荷 SHA-256 均为：
+
+```text
+7dbb223e4afef9c00198e769d2a2e616fa654c0c83f84514cccd0c50c84c8510
+```
+
+因此至少这一种 v41 RAW 变体不需要定点解码或 WASM 转换，直接提取 `_positions0` 数据块即可获得官方导出的 XYZ 点云。
+
+> 本样本是规则 Cognex Logo 测试点云，不是第 2–7 节的焊缝扫描样本。二者虽然具有相同 magic/version，但内部布局不同；不能把本节的固定偏移直接套用到焊缝 RAW。
+
+### 11.2 PCD 头与点云布局
+
+完整 PCD 头（每行以 LF 结束）：
+
+```text
+VERSION 0.7␠
+FIELDS x y z
+SIZE 4 4 4
+TYPE F F F
+WIDTH 700
+HEIGHT 500
+POINTS 350000
+DATA binary
+```
+
+- `WIDTH × HEIGHT = 700 × 500 = 350,000` 点；
+- 每点 12 B：`(x, y, z)` 三个 LE float32；
+- 载荷长度：`350,000 × 12 = 4,200,000 B`；
+- 无颜色、法线、强度字段，也无 `VIEWPOINT` 行；
+- 所有坐标均为有限值，无 NaN/Inf。
+
+实测坐标：
+
+| 分量 | 范围 | 不同值数量 | 说明 |
+|---|---|---:|---|
+| x | `[-50.0, 49.8571472168]` | 700 | 每行从右向左递减 |
+| y | `[0.0, 71.2857208252]` | 500 | 每行结束后递增 |
+| z | `{0.0, 2.0}` | 2 | Logo 平面/凸起高度，单位 mm |
+
+点顺序为**行优先**：首行 `y=0`，x 从 `49.857147` 递减至 `-50`；然后进入下一行。相邻列和相邻行的步长均约为 `0.142857149 mm`。
+
+### 11.3 RAW 中的 `_positions0` 数据块
+
+本样本中的精确布局：
+
+| 偏移 | 内容 |
+|---:|---|
+| `0x5588A` | 数据块前缀：`00 0A 00 00 00 00 00 00 00` |
+| `0x55893` | ASCII 标签 `_positions0`（11 B；末尾 `0` 同时是计数低字节） |
+| `0x5589D` | 从标签末尾开始的 LE u32 点数 `30 57 05 00 = 350,000` |
+| `0x558A1` | 350,000 × 3 个 LE float32，即 PCD 的完整二进制载荷 |
+| `0x456EE1` | 点云块结束，后续为其他类型/元数据记录 |
+
+提取不应依赖固定地址，而应搜索 `_positions0`，再读取与标签末尾重叠的点数和后续坐标。本样本的解析代码如下；这种重叠是否适用于其他点数，仍需更多样本确认：
+
+```python
+import struct
+
+raw = open("CognexLogo.raw", "rb").read()
+tag = raw.index(b"_positions0")
+count = struct.unpack_from("<I", raw, tag + len(b"_positions0") - 1)[0]
+start = tag + len(b"_positions0") + 3
+positions = raw[start:start + count * 12]
+points = list(struct.iter_unpack("<fff", positions))
+
+assert len(points) == 350000
+assert positions == open("CognexLogo.pcd", "rb").read()[95:]
+```
+
+标签后的 `57 05 00` 与标签末尾的 `30` 共同组成点数 `30 57 05 00`，不是字节数；坐标字节数需再乘 12。
+
+### 11.4 `_grey80` 灰度块
+
+点云之后还存在对应的 8 位灰度数组：
+
+| 偏移 | 内容 |
+|---:|---|
+| `0x4AC62C` | 前缀：`00 06 00 00 00 00 00 00 00` |
+| `0x4AC635` | ASCII 标签 `_grey80`（7 B） |
+| `0x4AC63B` | 计数高三字节 `57 05 00`；与省略的低字节 `0x30` 合成 `350,000` |
+| `0x4AC63E` | 350,000 个 u8 灰度值 |
+
+灰度块与点云块元素数相同、顺序对应，可按 `point[i] ↔ grey[i]` 建立颜色/强度映射。PCD 导出只含 XYZ，因此这 350,000 B 灰度信息被舍弃。
+
+### 11.5 分辨率与网格尺寸元数据
+
+文件尾部存在显式命名的 float64 字段。名称后的 `08 00 00 00` 表示值长度为 8 B，其后是 LE float64：
+
+| 字段 | 值 | 与 PCD 的关系 |
+|---|---:|---|
+| `ApproxResXDouble` | `0.1428571492433548` | 等于 PCD 的 x 网格间距 |
+| `ApproxResYDouble` | `0.1428571492433548` | 等于 PCD 的 y 网格间距 |
+| `ApproxResZDouble` | `0.0` | 本样本 z 只有离散平面值 |
+| `ROIMaxZDouble` | `2.0` | 等于 PCD 最大 z |
+| `ROIMinZDouble` | `0.0` | 等于 PCD 最小 z |
+
+文件最后 8 B 为两个 LE u32：
+
+```text
+BC 02 00 00  F4 01 00 00
+= 700        = 500
+= WIDTH      = HEIGHT
+```
+
+因此该变体可以直接用尾部宽高和 `_positions0` 重建组织化点云，不必从数据周期性猜测尺寸。
+
+### 11.6 对查看器与既有结论的影响
+
+1. **RAW 不是单一内部布局**：本样本与焊缝样本同为 v41，但本样本含 `_positions0` 明文 float32 XYZ，焊缝样本则呈定长记录结构。解析器应先识别标签/布局，再选择解码器。
+2. **真实点云已经可直接提取**：对含 `_positions0` 的文件，应优先使用该块，而不是从 `0x48` 起连续猜测 float32 三元组。
+3. **PCD 是 RAW 点云子集的官方导出**：`SavePointCloud()` 添加标准 PCD 文本头，并复制 `_positions0` 的 XYZ 数据；不保留 `_grey80` 和其余 RAW 元数据。
+4. **与 WASM 拒绝 RAW 的现象一致**：`takoweb.wasm` 的 `importPacket()` 接受 QuadMesh packet，而落盘 RAW 还可能包含 `_positions0`、灰度和其他序列化字段，两者不是同一输入格式。
+
 ---
 
-*分析方法：Python struct 逐字节解析 + 多文件 diff + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析*
+*分析方法：Python struct 逐字节解析 + 多文件 diff + 同源 RAW/PCD 全载荷哈希与字节比对 + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析*
