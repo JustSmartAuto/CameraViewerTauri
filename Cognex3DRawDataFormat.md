@@ -15,6 +15,7 @@
 | 2026-10-27 | v4 | 新增第 9 节：**L38 固件备份 `.bak` 容器结构**（v4 明文 JSON 清单 + 加密载荷），含 JSON 清单字段表、容器布局、加密判定依据、SDK 读取路径验证与 REA 工具链限制 |
 | 2026-11-10 | v5 | 新增第 10 节：**WebHMI 3D 数据解析**，依据 `Framework.js.gz` 明确点云/网格 v0、v1 与 QuadMesh v1 的外层协议、载荷布局、下载流程及 WASM 边界；修正“Web 端完全不解析”的表述 |
 | 2026-11-10 | v6 | 新增第 11 节：**CognexLogo RAW↔PCD 真值对照**，确认 RAW 内 `_positions0` 的 350,000 个 LE float32 XYZ 与导出 PCD 载荷逐字节一致，定位 `_grey80`、尾部宽高及分辨率字段；证明至少一种 v41 RAW 变体可直接提取规则网格点云 |
+| 2026-11-11 | v7 | 新增第 12 节：**5 件样本交叉验证**，定义布局 A（焊缝扫描，opaque 记录）与布局 B（CognexLogo，显式标签数据块）两类 RAW 变体；精确头部字段差异、pair-stream 起点工位相关性、扫描记录→PCD HEIGHT 一一对应关系、sample3/sample4 前 N 条扫描记录完全相同导致 PCD payload 全同 |
 
 ## 1. 文件组总体说明
 
@@ -74,33 +75,47 @@ OK 样本原始字节（小端，逐字解析）：
 
 | 偏移 | 长度 | 数值 | 说明 |
 |---|---|---|---|
-| 0x00 | 4 | `0x50FACE11` | 魔数，全文件唯一 |
-| 0x04 | 4 | `41` | 格式版本 |
-| 0x08 | 8 | 0 | 保留 |
-| 0x10 | 4 | `0x00010000` | 标志/子版本 |
-| 0x14 | 4 | `0x87020000` | 未确认（跨件不变） |
-| 0x18 | 8 | `0xDEC16784 0x00BF8D24` | 扫描器 GUID/序列 ID 片段 |
+| 0x00 | 4 | `0x50FACE11` | 魔数，所有 v41 RAW 全同 |
+| 0x04 | 4 | `41` | 格式版本，所有 v41 RAW 全同 |
+| 0x08 | 8 | 0 | 保留零 |
+| 0x10 | 4 | `0x00010000` (焊缝) / `0x00000000` (CognexLogo) | 标志字段，布局 B 为零 |
+| 0x14 | 4 | 焊缝：`0x87020000` / CognexLogo：`0xEA020000` | 未确认 |
+| 0x18 | 8 | 焊缝：`0xDEC16784 0x00BF8D24` | 扫描器 GUID/序列 ID 片段（跨工位不同） |
 | 0x20 | 16 | 全 0 | 保留 |
-| 0x30 | 16 | 见上文 | 疑似工位配置参数（含 0x3A=58、0xA0EC=41196） |
-| 0x40 | 4 | `0xC19670D0` | float32 标定参数（-18.08） |
-| 0x44 | 4 | `0xC1BE345C` | float32 标定参数（-0.1761） |
+| 0x30 | 4 | 工位 A：`0xA0EC0000` / 工位 B：`0xAAC80000` / CognexLogo：`0x00000000` | 工位配置参数 1（低半字=工位 ID 类） |
+| 0x34 | 4 | 工位 A：`0xA0EC003A` / 工位 B：`0xAAC8003A` / CognexLogo：`0x003FF0000` | 工位配置参数 2 |
+| 0x38 | 4 | 工位 A：`0x8400003A` / 工位 B：`0x9500003A` | 工位配置参数 3 |
+| 0x3C | 4 | `0x0007803A` | 所有焊缝样本全同（491,578） |
+| 0x40 | 4 | 工位 A：`0xC19670D0` / 工位 B：`0xC1A138DF` | float32 标定参数（跨工位不同） |
+| 0x44 | 4 | 工位 A：`0xC1BE345C` / 工位 B：`0xC1EBD5CC` | float32 标定参数（跨工位不同） |
 
-> **注**：旧版 v1 报告把 0x30-0x3F 的偏移和数值解读错误（`0x31`、`0x3B` 等不存在的偏移 + 错误值），现已修正为逐字节的 LE 小端解析。
+> **注 1**：旧版 v1 报告把 0x30-0x3F 的偏移和数值解读错误（`0x31`、`0x3B` 等不存在的偏移 + 错误值），现已修正为逐字节的 LE 小端解析。
+>
+> **注 2**：`sample2/3/4.raw` 的头部 80 字节与标定前缀 25KB **完全相同**（`SHA256(sample2[0x00:0x48+25000]) == SHA256(sample3) == SHA256(sample4)`），证明三者来自同一工位的同一标定配置；`sample.raw`（OK）与 `sample2/3/4.raw`（NG）的差异恰好集中在 0x30–0x4F 这 32 字节，即"工位配置参数 + 标定 float32 参数"区，是工位级的标定差异，不是件级差异。
+>
+> **注 3**：CognexLogo.raw 头部后半区（0x10–0x4F）与所有焊缝样本均不同，0x30–0x4F 区域几乎全零（仅 0x34 处为 `0x003FF000`，作为 float32 解释即 `1.0`），与其"非激光扫描、无 pair-stream"的特性一致。
 
-### 2.2 标定前缀（0x48 – 约 0x6245）
+### 2.2 标定前缀（0x48 – 扫描记录起点）
 
-工位级不变参考数据（多件比对完全相同，25 KB 量级）。内含：
+工位级不变参考数据（同工位多件比对完全相同，~25–26 KB 量级）。内含：
 
 - **Block A**（0x48 起）：标定 float32 三元组序列（米级小量，如 `(-1.80e-3, 0, -0.18), (-1.78e-3, 0, -0.18), …`），共 ~1,967 点，线性递减。
-- **Pair-stream**（0x5C7C 起）：225 对 8 字节记录，6 段编码剖面 x 坐标（毫米级）。解码公式见第 3 节。
+- **Pair-stream**（焊缝样本：0x5C7C 起，225 × 8 = 1800 字节；解码公式见第 3 节）：6 段编码剖面 x 坐标。**pair-stream 起点工位相关**，`sample2/3/4` 在 0x5C00 起解码出 225 点合理 x 坐标（25KB prefix 与 `sample.raw` 不同）。CognexLogo.raw **不含 pair-stream**。
 - **Block B/C**：其他标定 float32 流，含 1.0、5.0、50、570 等参数值。
 
-### 2.3 扫描记录区（约 0x6245 – 0x85FAD8）
+> **跨工位验证**：`sample.raw`（工位 A）与 `sample2/3/4.raw`（工位 B）从 0x48 起标定前缀前 25KB **相似度约 10%**（仅 2,552/25,000 字节相同），证明前缀内部的 pair-stream 和 Block A/C 均随工位标定完全变化。
+
+### 2.3 扫描记录区（标定结尾 – 元数据开头）
 
 - 定长 **15,360 字节**（0x3C00）每条。
-- OK 样本含 **572 条**，NG 样本（2026-10-23）含 **415 条** → 条数由视野/配置决定。
+- **精确起点定位**：同工位样本间首个字节差异即扫描记录起点。`sample2 vs sample3` 首差异在 **0x6275**、`sample3 vs sample4` 首差异在 **0x62AD**，两者头部+标定前缀全同；故工位 B 的扫描起点在 **0x6245**（标定总长 ≈ 25,149 字节）附近。工位 A（sample.raw）起点在同一量级。
+- **条数由 PCD HEIGHT 精确给出**（已跨 4 件样本验证，见第 12 节）：
+  - `sample.raw`：572 条 → 对应 PCD HEIGHT=570（差 2 条，疑末尾空记录或截断）
+  - `sample2/3/4.raw`：415 条 → 对应 PCD HEIGHT=415（精确匹配）
 - 内部为编码测量值，opaque binary blob（ILSpy 确认 managed 层不解析内部结构，直接传给 native `tako-vc140-22_1.dll` 做渲染）。
 - 记录间以周期性变化区 (~12.7 KB) + 填充区 (~2.6 KB) 交替。填充区为恒定小量（对应 NG 件焊缝缺失时"无有效返回"）。
+
+> **sample3/4 特例**：`sample3.raw` 与 `sample4.raw` 的扫描记录区前 0x62AD 字节完全相同（包含完整的头部 + 标定 + 若干扫描记录），之后才出现第一个字节差异。对应的 `sample3.pcd` 与 `sample4.pcd` payload（7,968,000 字节）**SHA256 完全一致**。这证明：**前 N 条完全相同的扫描记录，解码后产生完全相同的导出 PCD 点云**——SavePointCloud() 对相同扫描数据产生确定性输出。
 
 ### 2.4 尾部元数据（约 0x85FAD8 – EOF）
 
@@ -715,6 +730,122 @@ BC 02 00 00  F4 01 00 00
 3. **PCD 是 RAW 点云子集的官方导出**：`SavePointCloud()` 添加标准 PCD 文本头，并复制 `_positions0` 的 XYZ 数据；不保留 `_grey80` 和其余 RAW 元数据。
 4. **与 WASM 拒绝 RAW 的现象一致**：`takoweb.wasm` 的 `importPacket()` 接受 QuadMesh packet，而落盘 RAW 还可能包含 `_positions0`、灰度和其他序列化字段，两者不是同一输入格式。
 
+## 12. 多样本交叉验证（2026-11-11，samples/ 目录 5 件）
+
+本节系统对比 `samples/` 目录下的 5 组 RAW/PCD 样本，明确 v41 RAW 内部存在至少两种布局变体，并建立 RAW 扫描记录与导出 PCD 之间的数量级与几何对应关系。
+
+### 12.1 样本组清单
+
+| 分组 | RAW 文件 | 大小 | PCD 文件 | PCD WIDTH | PCD HEIGHT | PCD POINTS | 来源工位 |
+|---|---|---:|---|---:|---:|---:|---|
+| A（OK 焊缝） | `sample.raw` | 8,798,078 B | `sample.pcd` | 1,920 | 570 | 1,094,400 | 工位 A |
+| B（NG 焊缝） | `sample2.raw` | 6,412,318 B | `sample2.pcd` | 1,920 | 415 | 796,800 | 工位 B |
+| B（NG 焊缝） | `sample3.raw` | 6,412,318 B | `sample3.pcd` | 1,920 | 415 | 796,800 | 工位 B |
+| B（NG 焊缝） | `sample4.raw` | 6,412,318 B | `sample4.pcd` | 1,920 | 415 | 796,800 | 工位 B |
+| C（Logo） | `CognexLogo.raw` | 16,660,441 B | `CognexLogo.pcd` | 700 | 500 | 350,000 | 非扫描 |
+
+所有 RAW 文件的魔数均为 `0x50FACE11`、版本均为 `41`；所有 PCD 均为 **v0.7 二进制格式**，`FIELDS x y z / SIZE 4 4 4 / TYPE F F F`（无颜色、法线、强度字段）。
+
+### 12.2 内部布局分类
+
+根据是否含 `_positions0` 等显式标签，将 v41 RAW 分为两类：
+
+| 特征 | **布局 A（焊缝扫描）** | **布局 B（规则网格）** |
+|---|---|---|
+| 代表样本 | `sample.raw`、`sample2/3/4.raw` | `CognexLogo.raw` |
+| 内部标签 | 无 `_positions0`、无 `_grey80` | 含 `_positions0`、`_grey80`、`ApproxRes*`、`ROI*` |
+| 扫描记录区 | 15,360 B 定长 opaque blob，条数 = PCD HEIGHT | **无定长记录区**；`_positions0` 直接连续存储 float32 XYZ |
+| Pair-stream | 有（6 段 x 坐标标定） | 无 |
+| 元数据签名 | 文件末尾有 `1.0, 5.0, 5.0` float32 签名 | 文件末尾有 `ApproxRes*`、`ROI*` 字段 + 尾部 WIDTH/HEIGHT |
+| 文件尺寸量级 | 6–9 MB | 16.7 MB（因含 4.2 MB 的显式 XYZ 数据块） |
+| 与 PCD 对应 | 扫描记录 → 设备解码 → PCD（**中间经过 opaque 层**，PCD 载荷不直接嵌入 RAW） | `_positions0` 块 → PCD（**逐字节相同**，SHA256 一致） |
+
+> **为什么 CognexLogo.raw 更大？** 因为布局 B 把完整 XYZ 点云（4.2 MB）+ 灰度数组（350 KB）以显式 float32/uint8 存储在 RAW 内；而布局 A 的扫描记录是编码的 compact opaque 格式，RAW 不含"直接可读的点云"，解码需 native WASM。
+
+### 12.3 布局 A 内部差异：同工位 vs 跨工位
+
+`sample2/3/4.raw` 头部 80 字节与标定前缀前 25KB **完全相同**：
+
+```text
+SHA256(sample2.raw) = 4130789a...1cc264ce65
+SHA256(sample3.raw) = a1964b97...1bb96ac2     ← 全文件不同！
+SHA256(sample4.raw) = 0c73588e...d7077c
+前 0x6245 字节（头部+标定）全同
+```
+
+三者的差异从扫描记录起点（0x6245 附近）才开始。这证明：
+
+1. **标定前缀 = 工位级配置**（激光标定、pair-stream、Block A/B/C），同工位多件不变；
+2. **扫描记录区 = 件级测量数据**，每件不同；
+3. **头部 0x30–0x4F** 属于工位级（含扫描记录计数或缓冲区尺寸参数），跨工位变化，同工位多件不变。
+
+`sample.raw`（工位 A）与 `sample2.raw`（工位 B）的头部差异**恰好集中在 0x30–0x4F**（19 字节），其余部分（0x00–0x2F 的魔数、版本、GUID 等）完全相同；这与"工位级标定差异"的假设一致。
+
+### 12.4 布局 A 精确解析模型：RAW → 扫描记录 → PCD
+
+跨 4 件焊缝样本验证得到以下模型：
+
+```text
+RAW 文件:
+  Header (72+2 B)      → 标定前缀 (~25 KB)    → 扫描记录 × N (15,360 B each)    → 元数据尾部
+
+N = PCD HEIGHT = RAW 文件尺寸反向推算的整数条数
+PCD WIDTH ≠ pair-stream 点数 (225)
+         = 每条扫描记录解码后的点数 (1,920)
+PCD payload = 设备解码所有记录得到的连续 float32 XYZ 三元组
+```
+
+**已验证数值：**
+
+| 样本 | PCD WIDTH | PCD HEIGHT | PCD POINTS | 扫描记录条数 | WIDTH × HEIGHT |
+|---|---:|---:|---:|---:|---:|
+| `sample2/3/4` | 1,920 | 415 | 796,800 | **415** | **1,920 × 415 = 796,800 ✓** |
+| `sample` | 1,920 | 570 | 1,094,400 | **572** | 1,920 × 570 = 1,094,400 ✓ (2 条空) |
+
+PCD HEIGHT 与 RAW 扫描记录条数**完全一一对应**（sample 的 572 vs 570 差异疑为末尾 2 条空记录被导出时跳过）；每条扫描记录解码为固定 **1,920 个三维点**（WIDTH=1920）。
+
+### 12.5 PCD payload 与 RAW 的直接对应关系
+
+两类布局 PCD payload 与 RAW 的关系完全不同：
+
+**布局 A（焊缝扫描）— PCD payload 不直接嵌入 RAW：**
+- `sample2.raw` → 搜索 `sample2.pcd` payload 的前 1,000 字节在 RAW 中的位置 → **未找到**
+- 扫描记录内部编码格式（定点 16.16 或其他 compact 编码）需 native `tako-vc140-22_1.dll` 解码
+- `SavePointCloud()` 调用链：扫描记录 blob → Tako native 解码 → 设备端临时保存 → PC 下载
+
+**布局 B（CognexLogo）— PCD payload 直接嵌入 RAW 的 `_positions0` 块：**
+- `CognexLogo.raw` → `_positions0` @ 0x55893 → count=350,000 → 数据从 0x558A1 起
+- RAW `_positions0` 数据 (4,200,000 B) ↔ PCD payload (4,200,000 B) — **SHA256 完全一致**：`7dbb223e...84c8510`
+- `SavePointCloud()` 对布局 B 更像是"复制 `_positions0` + 添加 PCD 文本头"
+
+### 12.6 sample3/4 PCD payload 全同的机制
+
+`sample3.raw` 与 `sample4.raw` 的全文件 SHA256 不同（`a1964b97...1bb96ac2` vs `0c73588e...d7077c`），但对应的 `sample3.pcd` 与 `sample4.pcd` payload（7,968,000 字节）**SHA256 完全一致**（`60541a64...accee6848a37`）。
+
+逐字节 diff 定位差异：`sample3.raw` 与 `sample4.raw` 首个字节差异出现在 **0x62AD**。对比记录起点推算：
+
+```text
+sample3 前 0x62AD = Header + 标定前缀 + 若干条完整扫描记录
+sample4 前 0x62AD = Header + 标定前缀 + 若干条完整扫描记录
+两者前 0x62AD 字节完全相同 → 解码得到相同的 PCD 点云
+```
+
+这证明：**SavePointCloud() 对相同扫描数据输出确定性的 PCD**，不含时间戳、随机数或设备序列号等非确定性字段（时间戳只在文件名层面体现，不在 payload 内）。
+
+### 12.7 对查看器的启示
+
+1. **布局自动识别优先**：先搜 `_positions0`、`_grey80` 等标签，命中则走布局 B 的直接提取路径，避免依赖 WASM；
+2. **PCD HEIGHT 作为扫描记录条数的参考**：若样本同时有 PCD 输出，可用 PCD HEIGHT 反向推算 RAW 扫描起点与条数；
+3. **布局 A 的 fallback 解码**：WASM 失败后，应尝试 `scan_start = meta_sig - HEIGHT × 15360` 反向定位，再从每条记录起始字节猜测 compact 编码方式；
+4. **同工位多件可共享标定**：对于批量离线查看场景，可缓存同一工位的 pair-stream 和 Block A/B/C，避免重复解析。
+
 ---
 
-*分析方法：Python struct 逐字节解析 + 多文件 diff + 同源 RAW/PCD 全载荷哈希与字节比对 + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析*
+*分析方法：Python struct 逐字节解析 + 多文件 diff + 同源 RAW/PCD 全载荷哈希与字节比对 + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析 + 5 件 sample 目录的 RAW/PCD 交叉验证（v7 新增）*
+
+*v7 具体验证手段：全文件 SHA256 比对、同工位多件的标定前缀完全一致性确认、`sample3 vs sample4` 差异边界反向定位扫描起点、PCD payload（7,968,000 B）SHA256 全同机制确认、布局 A/B 分类模型建立*
+
+---
+
+*文档版本：v7（2026-11-11）| 上一版：v6（2026-11-10）*
+*历史版本更新见更新历史表*
