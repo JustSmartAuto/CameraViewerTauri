@@ -15,7 +15,8 @@
 | 2026-10-27 | v4 | 新增第 9 节：**L38 固件备份 `.bak` 容器结构**（v4 明文 JSON 清单 + 加密载荷），含 JSON 清单字段表、容器布局、加密判定依据、SDK 读取路径验证与 REA 工具链限制 |
 | 2026-11-10 | v5 | 新增第 10 节：**WebHMI 3D 数据解析**，依据 `Framework.js.gz` 明确点云/网格 v0、v1 与 QuadMesh v1 的外层协议、载荷布局、下载流程及 WASM 边界；修正“Web 端完全不解析”的表述 |
 | 2026-11-10 | v6 | 新增第 11 节：**CognexLogo RAW↔PCD 真值对照**，确认 RAW 内 `_positions0` 的 350,000 个 LE float32 XYZ 与导出 PCD 载荷逐字节一致，定位 `_grey80`、尾部宽高及分辨率字段；证明至少一种 v41 RAW 变体可直接提取规则网格点云 |
-| 2026-11-11 | v7 | 新增第 12 节：**5 件样本交叉验证**，定义布局 A（焊缝扫描，opaque 记录）与布局 B（CognexLogo，显式标签数据块）两类 RAW 变体；精确头部字段差异、pair-stream 起点工位相关性、扫描记录→PCD HEIGHT 一一对应关系、sample3/sample4 前 N 条扫描记录完全相同导致 PCD payload 全同 |
+| 2026-11-11 | v7 | 新增第 12 节：**5 件样本交叉验证**，定义布局 A（焊缝扫描，opaque 记录）与布局 B（CognexLogo，显式标签数据块）两类 RAW 变体；精确头部字段差异、pair-stream 起点工位相关性、扫描记录→PCD HEIGHT 一一对应关系 |
+| 2026-11-11 | v8 | **更正 v7 的错误结论**：v7 基于一份内容有误的 sample4.pcd（与 sample3.pcd 全同）错误推断 SavePointCloud() 输出确定性 PCD。更正后 sample4.pcd 有独立内容（SHA256=d0a7026d...），本节 12.6 重写为 RAW 差异→PCD 差异的真实映射：RAW 差异从扫描记录 #0 偏移 0x68 处开始，PCD 差异从点 #70 开始（前 70 点仍相同），暗示扫描记录有记录头/固定区域结构 |
 
 ## 1. 文件组总体说明
 
@@ -115,7 +116,7 @@ OK 样本原始字节（小端，逐字解析）：
 - 内部为编码测量值，opaque binary blob（ILSpy 确认 managed 层不解析内部结构，直接传给 native `tako-vc140-22_1.dll` 做渲染）。
 - 记录间以周期性变化区 (~12.7 KB) + 填充区 (~2.6 KB) 交替。填充区为恒定小量（对应 NG 件焊缝缺失时"无有效返回"）。
 
-> **sample3/4 特例**：`sample3.raw` 与 `sample4.raw` 的扫描记录区前 0x62AD 字节完全相同（包含完整的头部 + 标定 + 若干扫描记录），之后才出现第一个字节差异。对应的 `sample3.pcd` 与 `sample4.pcd` payload（7,968,000 字节）**SHA256 完全一致**。这证明：**前 N 条完全相同的扫描记录，解码后产生完全相同的导出 PCD 点云**——SavePointCloud() 对相同扫描数据产生确定性输出。
+> **sample3/4 特例**：`sample3.raw` 与 `sample4.raw` 的头部 + 标定前缀（前 ~0x62AD 字节）完全相同，第一个字节差异落在 **扫描记录 #0 内部偏移 0x68** 处（即首条扫描记录中间就开始不同）。因此两者导出的 PCD 不同——`sample3.pcd` 与 `sample4.pcd` payload 有 **4,175,982 字节差异**，首差异在点 #70（0x348 处），前 70 个三维点仍相同。SavePointCloud() 对不同扫描数据正常输出不同点云。
 
 ### 2.4 尾部元数据（约 0x85FAD8 – EOF）
 
@@ -818,19 +819,35 @@ PCD HEIGHT 与 RAW 扫描记录条数**完全一一对应**（sample 的 572 vs 
 - RAW `_positions0` 数据 (4,200,000 B) ↔ PCD payload (4,200,000 B) — **SHA256 完全一致**：`7dbb223e...84c8510`
 - `SavePointCloud()` 对布局 B 更像是"复制 `_positions0` + 添加 PCD 文本头"
 
-### 12.6 sample3/4 PCD payload 全同的机制
+### 12.6 sample3/4 的 RAW 差异 → PCD 差异映射
 
-`sample3.raw` 与 `sample4.raw` 的全文件 SHA256 不同（`a1964b97...1bb96ac2` vs `0c73588e...d7077c`），但对应的 `sample3.pcd` 与 `sample4.pcd` payload（7,968,000 字节）**SHA256 完全一致**（`60541a64...accee6848a37`）。
-
-逐字节 diff 定位差异：`sample3.raw` 与 `sample4.raw` 首个字节差异出现在 **0x62AD**。对比记录起点推算：
+`sample3.raw` 与 `sample4.raw` 的头部 + 标定前缀（前 ~0x6245 字节）完全相同，差异从扫描记录区内部开始。逐字节 diff 定位：
 
 ```text
-sample3 前 0x62AD = Header + 标定前缀 + 若干条完整扫描记录
-sample4 前 0x62AD = Header + 标定前缀 + 若干条完整扫描记录
-两者前 0x62AD 字节完全相同 → 解码得到相同的 PCD 点云
+sample3.raw 与 sample4.raw 全文件 SHA256 不同
+首个 RAW 差异字节: 0x62AD = 扫描记录 #0 内部偏移 0x68
+差异字节总数: 3,018,179 / 6,412,318 (约 47%)
 ```
 
-这证明：**SavePointCloud() 对相同扫描数据输出确定性的 PCD**，不含时间戳、随机数或设备序列号等非确定性字段（时间戳只在文件名层面体现，不在 payload 内）。
+对应的 PCD 差异：
+
+```text
+sample3.pcd SHA256 (payload): 60541a64...accee6848a37
+sample4.pcd SHA256 (payload): d6936d0f...be370ff136
+PCD payload 全同? NO
+差异字节数: 4,175,982 / 9,561,600 (约 43.7%)
+首差异点: 点 #70 (0-indexed), 字节偏移 0x348 = 70 × 12
+sample3 @ 点 70: (19.632114, -0.107358, -21.911499)
+sample4 @ 点 70: (nan, nan, nan)
+```
+
+**关键观察**：
+
+1. **RAW 差异从扫描记录 #0 内部 0x68 字节处开始**，但 PCD 差异从 **点 #70**（每条 1920 点的点云第 70 个点）才出现。这说明 15,360 字节的扫描记录并非点到点的线性映射，记录内部编码结构有固定头部或辅助字段（前 ~0x68 字节可能是记录头/状态字），之后才是对应点 70+ 的测量数据。
+2. **前 70 点仍相同**：sample3 与 sample4 的 PCD 前 70 个三维点（840 字节）完全一致，对应 RAW 扫描记录 #0 的前 0x68 字节区域——该区域的测量内容在两件样本中恰好相同（可能是非激光返回区域，填充值或默认值）。
+3. **sample4.pcd 含更多 NaN**：`sample4.pcd` 10K 采样点中 NaN 比例 ~18% vs `sample3.pcd` ~36%（实际 finite 数 sample4=8189/10000，sample3=6379/10000），符合 NG 件焊缝缺失程度不同的实际情况。
+
+> **前次修正说明（v7 → v8）**：v7 基于一份内容有误的 sample4.pcd 得出了"sample3.pcd == sample4.pcd，SavePointCloud() 输出确定性 PCD"的错误结论。更正后的 sample4.pcd 有独立的 SHA256，本节已据此重写。本节数据由重新全量哈希与逐字节 diff 验证得出。
 
 ### 12.7 对查看器的启示
 
@@ -843,9 +860,9 @@ sample4 前 0x62AD = Header + 标定前缀 + 若干条完整扫描记录
 
 *分析方法：Python struct 逐字节解析 + 多文件 diff + 同源 RAW/PCD 全载荷哈希与字节比对 + 熵/块重复/XOR/解压统计 + ILSpy 8.2.0 反编译 Cognex managed DLL（25.3.0 与 26.1.0）+ REA 6.3.0 + Ghidra 12.1.4 + WebHMI `Framework.js.gz` / `takoweb.wasm.gz` 静态分析 + 5 件 sample 目录的 RAW/PCD 交叉验证（v7 新增）*
 
-*v7 具体验证手段：全文件 SHA256 比对、同工位多件的标定前缀完全一致性确认、`sample3 vs sample4` 差异边界反向定位扫描起点、PCD payload（7,968,000 B）SHA256 全同机制确认、布局 A/B 分类模型建立*
+*v8 修正：sample4.pcd 内容被更正后，重新完成全量哈希与逐字节 diff 验证，推翻 v7 的"SavePointCloud() 输出确定性 PCD"错误结论，重建 RAW 差异→PCD 差异映射模型*
 
 ---
 
-*文档版本：v7（2026-11-11）| 上一版：v6（2026-11-10）*
+*文档版本：v8（2026-11-11）| 上一版：v7（2026-11-11）*
 *历史版本更新见更新历史表*
